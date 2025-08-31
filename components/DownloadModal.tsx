@@ -59,7 +59,7 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onDownlo
         </div>
         
         <div className="w-full h-64 bg-black/20 rounded-lg overflow-hidden flex items-center justify-center">
-            <img src={imageSrc} alt="Export preview" className="max-w-full max-h-full object-contain" />
+            <img src={imageSrc} alt="Export preview" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />
         </div>
 
         <fieldset className="flex flex-col gap-4">

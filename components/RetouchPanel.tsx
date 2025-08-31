@@ -14,6 +14,7 @@ interface RetouchPanelProps {
   isHotspotSet: boolean;
   referenceImage: File | null;
   onReferenceImageChange: (file: File | null) => void;
+  credits: number;
 }
 
 const RetouchPanel: React.FC<RetouchPanelProps> = ({ 
@@ -23,7 +24,8 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
     onRadiusChange,
     isHotspotSet,
     referenceImage,
-    onReferenceImageChange
+    onReferenceImageChange,
+    credits
 }) => {
   const [prompt, setPrompt] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,17 +48,43 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
   
   const referenceImageUrl = referenceImage ? URL.createObjectURL(referenceImage) : null;
 
-  const canApply = !!prompt.trim() || !!referenceImage;
+  const isOutOfCredits = credits <= 0;
+  const canApply = (!!prompt.trim() || !!referenceImage) && !isOutOfCredits;
+
+  // Dynamic helper text based on user input
+  const getHelperText = () => {
+    const hasReference = !!referenceImage;
+    const hasPrompt = !!prompt.trim();
+
+    if (hasReference && !hasPrompt) {
+        return (
+            <>
+                <strong className="block font-semibold text-amber-400">Content Replacement Mode</strong>
+                <span>The reference image's content will be integrated into your photo.</span>
+            </>
+        );
+    }
+    if (hasReference && hasPrompt) {
+        return (
+            <>
+                <strong className="block font-semibold text-amber-400">Style Transfer Mode</strong>
+                <span>The reference image inspires the style; your text guides the edit.</span>
+            </>
+        );
+    }
+    if (isHotspotSet) {
+        return <span>Describe your edit for the selected area.</span>;
+    }
+    return <span>Describe a change for the whole image, or click it for a precise edit.</span>;
+  };
+
 
   return (
-    <div className="w-full bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col gap-4 animate-fade-in backdrop-blur-sm">
+    <div className="w-full max-h-full overflow-y-auto bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col gap-4 animate-fade-in backdrop-blur-sm">
       <h3 className="text-lg font-semibold text-center text-gray-300">Precise Retouching</h3>
-      <p className="text-sm text-gray-400 text-center -mt-2">
-        {isHotspotSet 
-            ? "Describe your edit for the selected area."
-            : "Describe a change for the whole image, or click it for a precise edit."
-        }
-      </p>
+      <div className="text-sm text-gray-400 text-center -mt-2 min-h-[3rem] flex flex-col items-center justify-center">
+        {getHelperText()}
+      </div>
 
       <div className="flex flex-col gap-3">
         <div className="flex justify-between items-center">
@@ -71,7 +99,7 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
             step="1"
             value={radius}
             onChange={(e) => onRadiusChange(parseInt(e.target.value, 10))}
-            disabled={isLoading || !isHotspotSet}
+            disabled={isLoading || !isHotspotSet || isOutOfCredits}
             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
         />
       </div>
@@ -93,7 +121,7 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
                         </button>
                     </>
                 ) : (
-                    <button onClick={handleUploadClick} disabled={isLoading} className="flex flex-col items-center gap-2 text-gray-400 hover:text-white transition-colors p-4">
+                    <button onClick={handleUploadClick} disabled={isLoading || isOutOfCredits} className="flex flex-col items-center gap-2 text-gray-400 hover:text-white transition-colors p-4">
                         <UploadIcon className="w-8 h-8"/>
                         <span className="text-xs text-center">Click to upload</span>
                     </button>
@@ -104,7 +132,7 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
                     onChange={handleFileChange}
                     className="hidden"
                     accept="image/*"
-                    disabled={isLoading}
+                    disabled={isLoading || isOutOfCredits}
                 />
             </div>
         </div>
@@ -119,7 +147,7 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
               placeholder="e.g., 'add sunglasses' or 'make the cat smaller'"
               className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
               rows={5}
-              disabled={isLoading}
+              disabled={isLoading || isOutOfCredits}
             />
         </div>
       </div>
@@ -130,8 +158,9 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
           onClick={handleApply}
           className="w-full bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-4 px-6 rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base disabled:from-amber-800 disabled:to-amber-700 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none"
           disabled={isLoading || !canApply}
+          title={isOutOfCredits ? "You are out of credits." : "Apply this retouch"}
         >
-          Apply Retouch
+          Apply Retouch (1 Credit)
         </button>
       </div>
     </div>

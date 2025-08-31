@@ -11,6 +11,7 @@ interface BackgroundPanelProps {
   onApplyBackgroundColor: (color: string) => void;
   onApplyBackgroundImage: (file: File) => void;
   isLoading: boolean;
+  credits: number;
 }
 
 const BackgroundPanel: React.FC<BackgroundPanelProps> = ({
@@ -18,6 +19,7 @@ const BackgroundPanel: React.FC<BackgroundPanelProps> = ({
   onApplyBackgroundColor,
   onApplyBackgroundImage,
   isLoading,
+  credits,
 }) => {
   const [color, setColor] = useState('#ffffff');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -44,8 +46,10 @@ const BackgroundPanel: React.FC<BackgroundPanelProps> = ({
     fileInputRef.current?.click();
   };
 
+  const isOutOfCredits = credits <= 0;
+
   return (
-    <div className="w-full bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col gap-4 animate-fade-in backdrop-blur-sm">
+    <div className="w-full max-h-full overflow-y-auto bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col gap-4 animate-fade-in backdrop-blur-sm">
       <h3 className="text-lg font-semibold text-center text-gray-300">Background Tools</h3>
       
       <div className="flex flex-col gap-2 p-3 bg-black/20 rounded-lg border border-gray-700/50">
@@ -53,10 +57,11 @@ const BackgroundPanel: React.FC<BackgroundPanelProps> = ({
         <p className="text-sm text-gray-400">This prepares your image for a new background.</p>
         <button
           onClick={onGenerateTransparentBackground}
-          disabled={isLoading}
+          disabled={isLoading || isOutOfCredits}
           className="w-full bg-white/10 text-gray-200 font-semibold py-3 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50"
+          title={isOutOfCredits ? "You are out of credits." : "Remove the background from the image"}
         >
-          Remove Background
+          Remove Background (1 Credit)
         </button>
       </div>
       

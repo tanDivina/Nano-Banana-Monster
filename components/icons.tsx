@@ -44,6 +44,12 @@ export const RetouchIcon: React.FC<{ className?: string }> = ({ className }) => 
     </svg>
 );
 
+export const EraseIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" />
+    </svg>
+);
+
 export const PaletteIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" className={className}>
         <path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zM6.5 12c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
@@ -74,6 +80,24 @@ export const UpscaleIcon: React.FC<{ className?: string }> = ({ className }) => 
     </svg>
 );
 
+export const DownloadIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    </svg>
+);
+
+export const ShareIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.195.025.39.044.588.05H11a2.25 2.25 0 012.25 2.25v.015c0 .324-.12.632-.338.868c-.218.236-.495.39-.796.433M7.217 10.907a2.25 2.25 0 110 2.186m0-2.186c-.195.025-.39.044-.588.05H7.5a2.25 2.25 0 00-2.25 2.25v.015c0 .324.12.632.338.868.218.236.495.39.796.433m0 0a2.25 2.25 0 100 2.186m0-2.186c.195.025.39.044.588.05H11a2.25 2.25 0 012.25 2.25v.015c0 .324-.12.632-.338.868-.218.236-.495.39-.796.433m0 0a2.25 2.25 0 110 2.186m0-2.186c-.195.025-.39.044-.588.05H7.5a2.25 2.25 0 00-2.25 2.25v.015c0 .324.12.632.338.868.218.236.495.39.796.433m-3.429 2.134a2.25 2.25 0 110-2.186m0 2.186c.195-.025.39-.044.588-.05H11a2.25 2.25 0 002.25-2.25v-.015a2.25 2.25 0 00-.338-.868c-.218-.236-.495-.39-.796-.433M16.5 7.5a2.25 2.25 0 100-2.186m0 2.186c-.195-.025-.39-.044-.588-.05H11a2.25 2.25 0 01-2.25-2.25v-.015a2.25 2.25 0 01.338-.868.75.75 0 01.218-.236.632.632 0 01.796-.433" />
+    </svg>
+);
+
+export const HeartIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+    </svg>
+);
+
 export const BananaIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className={className}>
         <path d="M12.78,2.32a1,1,0,0,0-1.56,0L8.27,6.86a1,1,0,0,0,0,1.56l3.22,3.22,0,0,1.56-1.56L9.83,7,12,4.88l3,3-4,4,.78.78,3.22,3.22a1,1,0,0,0,1.56,0l4.54-4.54a1,1,0,0,0,0-1.56Z" />
@@ -84,5 +108,11 @@ export const BananaIcon: React.FC<{ className?: string }> = ({ className }) => (
 export const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
+
+export const WandIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.998 15.998 0 011.622-3.385m5.043.025a15.998 15.998 0 001.622-3.385m3.388 1.62a15.998 15.998 0 01-1.622 3.385m-5.043-.025a15.998 15.998 0 00-3.388 1.62m7.5 0a4.5 4.5 0 00-4.5-4.5m4.5 4.5a4.5 4.5 0 01-4.5-4.5m0 0a4.5 4.5 0 014.5-4.5m-4.5 4.5a4.5 4.5 0 00-4.5 4.5m-1.622 3.385a15.998 15.998 0 01-1.622-3.385m0 0a15.998 15.998 0 013.388-1.622m-1.766 5.007a15.998 15.998 0 01-3.388 1.622m0 0a15.998 15.998 0 013.388 1.622m0 0a15.998 15.998 0 003.388-1.622m-1.766-5.007a15.998 15.998 0 00-3.388-1.622m0 0a15.998 15.998 0 001.622 3.385" />
     </svg>
 );

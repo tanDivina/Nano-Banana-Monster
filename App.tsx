@@ -7,7 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import { ReactCompareSlider } from 'react-compare-slider';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle } from './services/geminiService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
 import FilterPanel from './components/FilterPanel';
@@ -17,7 +17,9 @@ import BackgroundPanel from './components/BackgroundPanel';
 import UpscalePanel from './components/UpscalePanel';
 import DownloadModal from './components/DownloadModal';
 import RetouchPanel from './components/RetouchPanel';
-import { UndoIcon, RedoIcon, RetouchIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon } from './components/icons';
+import SocialPanel from './components/SocialPanel';
+import ErasePanel from './components/ErasePanel';
+import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon } from './components/icons';
 import StartScreen from './components/StartScreen';
 
 // Helper to convert a data URL string to a File object
@@ -37,16 +39,56 @@ const dataURLtoFile = (dataurl: string, filename: string): File => {
     return new File([u8arr], filename, { type: mime });
 };
 
-type Tool = 'retouch' | 'filter' | 'adjust' | 'crop' | 'background' | 'upscale' | null;
+// Helper to create a centered crop with a given aspect ratio
+function centerAspectCrop(
+    mediaWidth: number,
+    mediaHeight: number,
+    aspect: number,
+  ): Crop {
+    const mediaAspect = mediaWidth / mediaHeight;
+    let cropWidth = mediaWidth;
+    let cropHeight = mediaHeight;
+  
+    if (mediaAspect > aspect) {
+      // Image is wider than aspect ratio, so constrain by height
+      cropWidth = mediaHeight * aspect;
+    } else {
+      // Image is taller than aspect ratio, so constrain by width
+      cropHeight = mediaWidth / aspect;
+    }
+  
+    // Add a 5% margin for better initial view
+    const marginFactor = 0.95;
+    cropWidth *= marginFactor;
+    cropHeight *= marginFactor;
+  
+    const x = (mediaWidth - cropWidth) / 2;
+    const y = (mediaHeight - cropHeight) / 2;
+  
+    return {
+      unit: '%',
+      x: (x / mediaWidth) * 100,
+      y: (y / mediaHeight) * 100,
+      width: (cropWidth / mediaWidth) * 100,
+      height: (cropHeight / mediaHeight) * 100,
+    };
+}
+
+type Tool = 'retouch' | 'erase' | 'filter' | 'adjust' | 'crop' | 'background' | 'upscale' | 'social' | null;
 
 const tools = [
   { name: 'retouch', label: 'Retouch', icon: RetouchIcon },
+  { name: 'erase', label: 'Erase', icon: EraseIcon },
   { name: 'filter', label: 'Filter', icon: PaletteIcon },
   { name: 'adjust', label: 'Adjust', icon: SunIcon },
   { name: 'crop', label: 'Crop', icon: CropIcon },
   { name: 'background', label: 'Background', icon: BackgroundIcon },
   { name: 'upscale', label: 'Upscale', icon: UpscaleIcon },
+  { name: 'social', label: 'Social Post', icon: HeartIcon },
 ] as const;
+
+const SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const INITIAL_CREDITS = 25;
 
 const App: React.FC = () => {
     const [history, setHistory] = useState<File[]>([]);
@@ -60,24 +102,46 @@ const App: React.FC = () => {
     const [hotspotRadius, setHotspotRadius] = useState(50);
     const [referenceImage, setReferenceImage] = useState<File | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
+    const [credits, setCredits] = useState(INITIAL_CREDITS);
     
-    // Crop state
+    // Crop & Social state
     const [crop, setCrop] = useState<Crop>();
     const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
     const [cropAspect, setCropAspect] = useState<number | undefined>(undefined);
+    const [socialText, setSocialText] = useState('');
+    const [socialTitleSuggestions, setSocialTitleSuggestions] = useState<string[]>([]);
+    const [isSuggestingTitles, setIsSuggestingTitles] = useState(false);
+    const [socialTextPosition, setSocialTextPosition] = useState({ x: 50, y: 50 }); // Center in %
+    const [isDraggingText, setIsDraggingText] = useState(false);
+    const [imageDimensions, setImageDimensions] = useState<{ width: number, height: number } | null>(null);
+    const [socialFont, setSocialFont] = useState('Bebas Neue');
+    const [socialColor, setSocialColor] = useState('#FFFFFF');
+    const [socialShadow, setSocialShadow] = useState('2px 2px 4px rgba(0,0,0,0.8)');
+    const [socialFontSize, setSocialFontSize] = useState(6);
+
+    // Erase state
+    const [eraseSelection, setEraseSelection] = useState<Crop>();
+    const [completedEraseSelection, setCompletedEraseSelection] = useState<PixelCrop>();
 
     // Download modal state
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
     
     const imageRef = useRef<HTMLImageElement>(null);
+    const newUploadInputRef = useRef<HTMLInputElement>(null);
+    const imageContainerRef = useRef<HTMLElement>(null);
+    const textOverlayRef = useRef<HTMLDivElement>(null);
+    const dragStartRef = useRef<{ mouseX: number, mouseY: number, textX: number, textY: number } | null>(null);
+    
     const originalImage = history[0];
     const currentImage = history[historyIndex];
-    const previousImage = history[historyIndex - 1];
 
     const currentImageUrl = currentImage ? URL.createObjectURL(currentImage) : null;
     const originalImageUrl = originalImage ? URL.createObjectURL(originalImage) : null;
-    const previousImageUrl = previousImage ? URL.createObjectURL(previousImage) : null;
 
+    const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+        const { naturalWidth: width, naturalHeight: height } = e.currentTarget;
+        setImageDimensions({ width, height });
+    };
 
     // Save session to localStorage
     useEffect(() => {
@@ -96,14 +160,14 @@ const App: React.FC = () => {
                         reader.readAsDataURL(file);
                     });
                 }));
-                const sessionData = JSON.stringify({ history: historyAsDataUrls, historyIndex });
+                const sessionData = JSON.stringify({ history: historyAsDataUrls, historyIndex, credits });
                 localStorage.setItem('edit-session', sessionData);
             } else {
                 localStorage.removeItem('edit-session');
             }
         };
         saveSession();
-    }, [history, historyIndex, isRestoring]);
+    }, [history, historyIndex, credits, isRestoring]);
 
     // Load session from localStorage on mount
     useEffect(() => {
@@ -111,12 +175,13 @@ const App: React.FC = () => {
             try {
                 const savedSession = localStorage.getItem('edit-session');
                 if (savedSession) {
-                    const { history: historyAsDataUrls, historyIndex: savedIndex } = JSON.parse(savedSession);
+                    const { history: historyAsDataUrls, historyIndex: savedIndex, credits: savedCredits } = JSON.parse(savedSession);
                     const reconstructedHistory = historyAsDataUrls.map((item: any) =>
                         dataURLtoFile(item.dataUrl, item.name)
                     );
                     setHistory(reconstructedHistory);
                     setHistoryIndex(savedIndex);
+                    setCredits(savedCredits ?? INITIAL_CREDITS);
                 }
             } catch (err) {
                 console.error("Failed to load session:", err);
@@ -128,6 +193,48 @@ const App: React.FC = () => {
         loadSession();
     }, []);
 
+    const parseErrorMessage = (error: any): string => {
+        const defaultMessage = 'An unexpected error occurred. Please try again.';
+        if (!error || !error.message) {
+            return defaultMessage;
+        }
+    
+        const message = String(error.message).toLowerCase();
+    
+        if (message.includes('unsupported mime type')) {
+            return 'Unsupported file type. Please upload a JPEG, PNG, or WEBP image.';
+        }
+        if (message.includes('blocked due to safety')) {
+            return 'Your request was blocked for safety reasons. Please adjust your prompt and try again.';
+        }
+        if (message.includes('request was blocked')) {
+            return 'Your request was blocked. Please try a different prompt or image.';
+        }
+        if (message.includes('generation stopped unexpectedly')) {
+            return 'The AI stopped responding. This can happen with complex requests. Please try again.';
+        }
+        if (message.includes('api_key')) {
+            return 'There was a configuration issue. Please try again later.';
+        }
+        if (message.includes('network error') || message.includes('failed to fetch')) {
+            return 'A network error occurred. Please check your internet connection and try again.';
+        }
+         if (message.includes('could not generate image')) {
+            return 'The AI could not generate an image for this request. Please try a different prompt.';
+        }
+    
+        console.error("Unhandled API Error:", error);
+        return defaultMessage;
+    };
+
+    const deductCredit = () => {
+        setCredits(prev => Math.max(0, prev - 1));
+    };
+
+    const refillCredits = () => {
+        setCredits(INITIAL_CREDITS);
+    };
+
     const updateHistory = (newImage: File) => {
         setError(null);
         setIsComparing(false); // Turn off compare mode on new history entry
@@ -136,20 +243,51 @@ const App: React.FC = () => {
         setHistory(newHistory);
         setHistoryIndex(newHistory.length - 1);
     };
+    
+    const resetAndLoadImage = (file: File) => {
+        if (!SUPPORTED_MIME_TYPES.includes(file.type)) {
+            setError(`Unsupported file type (${file.type}). Please upload a JPEG, PNG, or WEBP.`);
+            return;
+        }
+
+        // Reset all state
+        setError(null);
+        setHistory([file]);
+        setHistoryIndex(0);
+        setActiveTool('retouch'); // Default tool
+        setIsComparing(false);
+        setHotspot(null);
+        setReferenceImage(null);
+        setCrop(undefined);
+        setCompletedCrop(undefined);
+        setEraseSelection(undefined);
+        setCompletedEraseSelection(undefined);
+        setSocialText('');
+        setSocialTextPosition({ x: 50, y: 50 });
+        setCropAspect(undefined);
+        setSocialTitleSuggestions([]);
+        setImageDimensions(null);
+        setSocialFont('Bebas Neue');
+        setSocialColor('#FFFFFF');
+        setSocialShadow('2px 2px 4px rgba(0,0,0,0.8)');
+        setSocialFontSize(6);
+        setCredits(INITIAL_CREDITS);
+    };
 
     const handleFileSelect = (files: FileList | null) => {
         if (files && files[0]) {
-            const file = files[0];
-            const newHistory = [file];
-            setHistory(newHistory);
-            setHistoryIndex(0);
-            setActiveTool('retouch'); // Default to retouch tool
+            resetAndLoadImage(files[0]);
         }
     };
     
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        handleFileSelect(e.target.files);
-    };
+    const handleNewUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+           resetAndLoadImage(e.target.files[0]);
+           // Reset file input value to allow re-uploading the same file
+           if (e.target) e.target.value = '';
+        }
+   };
+
 
     const handleUndo = useCallback(() => {
         if (historyIndex > 0) {
@@ -168,11 +306,21 @@ const App: React.FC = () => {
     const handleToolSelect = (tool: Tool) => {
         setIsComparing(false);
         setActiveTool(tool);
+        // Reset tool-specific states
         setHotspot(null);
         setReferenceImage(null);
-        if (tool !== 'crop') {
+        setSocialText('');
+        setSocialTitleSuggestions([]);
+        setSocialTextPosition({ x: 50, y: 50 });
+        
+        if (tool !== 'crop' && tool !== 'social') {
             setCrop(undefined);
             setCompletedCrop(undefined);
+            setCropAspect(undefined);
+        }
+        if (tool !== 'erase') {
+            setEraseSelection(undefined);
+            setCompletedEraseSelection(undefined);
         }
     };
 
@@ -210,18 +358,24 @@ const App: React.FC = () => {
     const handleApplyRetouch = async (prompt: string) => {
         if (!currentImage) return;
 
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
         if (!prompt.trim() && !referenceImage) {
             setError("Please provide a text description or a reference image for the retouch.");
             return;
         }
-
+        setError(null);
         setIsLoading(true);
         try {
+            deductCredit();
             const resultDataUrl = await generateEditedImage(currentImage, prompt, hotspot, hotspotRadius, referenceImage);
             const newFile = dataURLtoFile(resultDataUrl, `edited_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
-            setError(err.message || 'An unexpected error occurred during retouching.');
+            setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
             setHotspot(null);
@@ -229,15 +383,57 @@ const App: React.FC = () => {
         }
     };
 
-    const handleApplyFilter = async (prompt: string) => {
+    const handleApplyErase = async (prompt: string) => {
         if (!currentImage) return;
+
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+    
+        if (!prompt.trim() && !(completedEraseSelection?.width && completedEraseSelection.height)) {
+            setError("Please describe what to erase or select an area on the image.");
+            return;
+        }
+    
+        setError(null);
         setIsLoading(true);
         try {
+            deductCredit();
+            const promptText = prompt.trim();
+            const eraseInstruction = promptText
+                ? `Photorealistically remove "${promptText}" from the image. Intelligently fill the resulting space, blending it seamlessly with the surroundings to make it look as if the object was never there.`
+                : `Photorealistically remove the most prominent object within the selected area. Intelligently fill the resulting space, blending it seamlessly with the surroundings to make it look as if the object was never there. This is an inpainting task.`;
+            
+            const resultDataUrl = await generateEditedImage(currentImage, eraseInstruction, null, 0, null, completedEraseSelection);
+            const newFile = dataURLtoFile(resultDataUrl, `erased_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+            setEraseSelection(undefined);
+            setCompletedEraseSelection(undefined);
+        }
+    };
+
+    const handleApplyFilter = async (prompt: string) => {
+        if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+        
+        setError(null);
+        setIsLoading(true);
+        try {
+            deductCredit();
             const resultDataUrl = await generateFilteredImage(currentImage, prompt);
             const newFile = dataURLtoFile(resultDataUrl, `filtered_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
-            setError(err.message || 'An unexpected error occurred while applying the filter.');
+            setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -245,13 +441,21 @@ const App: React.FC = () => {
     
     const handleApplyAdjustment = async (prompt: string) => {
         if (!currentImage) return;
+
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
         setIsLoading(true);
         try {
+            deductCredit();
             const resultDataUrl = await generateAdjustedImage(currentImage, prompt);
             const newFile = dataURLtoFile(resultDataUrl, `adjusted_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
-            setError(err.message || 'An unexpected error occurred while applying the adjustment.');
+            setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
@@ -291,13 +495,14 @@ const App: React.FC = () => {
     };
 
     const handleApplyCrop = async () => {
-        if (completedCrop?.width && completedCrop?.height && imageRef.current && currentImage) {
+        if (completedCrop?.width && completedCrop?.height && imageRef.current && imageRef.current.naturalWidth > 0 && currentImage) {
+            setError(null);
             setIsLoading(true);
             try {
                 const croppedImageFile = await getCroppedImg(imageRef.current, completedCrop, `cropped_${Date.now()}.png`);
                 updateHistory(croppedImageFile);
             } catch (err: any) {
-                setError(err.message || "Failed to crop image.");
+                setError(parseErrorMessage(err));
             } finally {
                 setIsLoading(false);
                 setCrop(undefined);
@@ -306,336 +511,664 @@ const App: React.FC = () => {
         }
     };
     
-    const handleGenerateTransparentBackground = async () => {
-        if (!currentImage) return;
-        setIsLoading(true);
-        try {
-            const resultDataUrl = await generateTransparentBackground(currentImage);
-            const newFile = dataURLtoFile(resultDataUrl, `transparent_bg_${Date.now()}.png`);
-            updateHistory(newFile);
-        } catch (err: any) {
-            setError(err.message || 'An unexpected error occurred during background removal.');
-        } finally {
-            setIsLoading(false);
+    const handleSetAspect = useCallback((aspect: number | undefined) => {
+        setCropAspect(aspect);
+        
+        // If an aspect is selected, create a centered crop for it.
+        if (aspect && imageDimensions) {
+            const { width, height } = imageDimensions;
+            const newCrop = centerAspectCrop(width, height, aspect);
+            setCrop(newCrop);
+            
+            // Also update completedCrop to enable the apply button immediately
+            const pixelCrop: PixelCrop = {
+                unit: 'px',
+                x: Math.round((newCrop.x / 100) * width),
+                y: Math.round((newCrop.y / 100) * height),
+                width: Math.round((newCrop.width / 100) * width),
+                height: Math.round((newCrop.height / 100) * height),
+            };
+            setCompletedCrop(pixelCrop);
+        } 
+        // For 'free' aspect ratio, or if dimensions aren't ready, clear the crop
+        else if (!aspect) {
+            setCrop(undefined);
+            setCompletedCrop(undefined);
+        }
+    }, [imageDimensions]);
+
+    const applyTextToCanvas = (
+        ctx: CanvasRenderingContext2D,
+        text: string,
+        x: number,
+        y: number,
+        color: string,
+        shadow: string
+    ) => {
+        // Reset any previous shadows
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.fillStyle = color;
+    
+        if (!shadow || shadow === 'none') {
+            ctx.fillText(text, x, y);
+            return;
+        }
+    
+        // Outline effect
+        if (shadow.includes(',')) { // Heuristic for outline preset with multiple shadows
+            const outlineColor = '#000'; // Assuming black outline from the preset
+            const outlineWidth = 2; 
+            ctx.fillStyle = outlineColor;
+            ctx.fillText(text, x - outlineWidth, y - outlineWidth);
+            ctx.fillText(text, x + outlineWidth, y - outlineWidth);
+            ctx.fillText(text, x - outlineWidth, y + outlineWidth);
+            ctx.fillText(text, x + outlineWidth, y + outlineWidth);
+            // Main text on top
+            ctx.fillStyle = color;
+            ctx.fillText(text, x, y);
+        } else { // Drop shadow effect
+            const shadowRegex = /(-?\d+(?:\.\d+)?px)\s+(-?\d+(?:\.\d+)?px)\s+(-?\d+(?:\.\d+)?px)\s+(rgba?\(.+?\))/;
+            const match = shadow.match(shadowRegex);
+            if (match) {
+                ctx.shadowOffsetX = parseInt(match[1], 10);
+                ctx.shadowOffsetY = parseInt(match[2], 10);
+                ctx.shadowBlur = parseInt(match[3], 10);
+                ctx.shadowColor = match[4];
+                ctx.fillStyle = color;
+                ctx.fillText(text, x, y);
+    
+                // Reset shadow for subsequent draws on the canvas
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+            } else {
+                // Fallback if regex fails
+                ctx.fillText(text, x, y);
+            }
         }
     };
     
-    const applyOverlay = (overlayFile: File, operation: 'background' | 'color', color?: string): Promise<File> => {
+
+    const getCroppedAndCompositedImg = (
+        image: HTMLImageElement,
+        crop: PixelCrop,
+        fileName: string,
+        text: string,
+        textPosition: { x: number; y: number },
+        font: string,
+        color: string,
+        shadow: string,
+        fontSizeValue: number,
+    ): Promise<File> => {
+        const canvas = document.createElement('canvas');
+        const scaleX = image.naturalWidth / image.width;
+        const scaleY = image.naturalHeight / image.height;
+        canvas.width = crop.width;
+        canvas.height = crop.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Could not get canvas context");
+    
+        // 1. Draw the cropped image
+        ctx.drawImage(
+            image,
+            crop.x * scaleX,
+            crop.y * scaleY,
+            crop.width * scaleX,
+            crop.height * scaleY,
+            0, 0, crop.width, crop.height
+        );
+    
+        // 2. Add text overlay if provided
+        if (text) {
+            const fontSize = Math.round(canvas.width * (fontSizeValue / 100));
+            ctx.font = `bold ${fontSize}px "${font}"`;
+            ctx.textAlign = 'center';
+    
+            // Word wrapping
+            const maxWidth = canvas.width * 0.9;
+            const words = text.split(' ');
+            let line = '';
+            const lines = [];
+            for (const word of words) {
+                const testLine = line ? `${line} ${word}` : word;
+                if (ctx.measureText(testLine).width > maxWidth && line) {
+                    lines.push(line);
+                    line = word;
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line);
+    
+            // Drawing
+            const lineHeight = fontSize * 1.2;
+            const totalTextHeight = lines.length * lineHeight;
+            const textX = (textPosition.x / 100) * canvas.width;
+            let startY = (textPosition.y / 100) * canvas.height - (totalTextHeight / 2);
+            
+            ctx.textBaseline = 'top'; // Set baseline to top for easier calculation
+    
+            for (const currentLine of lines) {
+                applyTextToCanvas(ctx, currentLine, textX, startY, color, shadow);
+                startY += lineHeight;
+            }
+        }
+    
         return new Promise((resolve, reject) => {
-            const baseImage = new Image();
-            baseImage.src = URL.createObjectURL(currentImage);
-            baseImage.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = baseImage.naturalWidth;
-                canvas.height = baseImage.naturalHeight;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    reject(new Error("Failed to get canvas context"));
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    reject(new Error("Canvas to Blob conversion failed."));
                     return;
                 }
-
-                if (operation === 'background') {
-                    const backgroundImage = new Image();
-                    backgroundImage.src = URL.createObjectURL(overlayFile);
-                    backgroundImage.onload = () => {
-                        ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(baseImage, 0, 0); // Draw current image on top
-                        canvas.toBlob(blob => {
-                            if (blob) resolve(new File([blob], `bg_added_${Date.now()}.png`, { type: 'image/png' }));
-                            else reject(new Error("Canvas to blob conversion failed"));
-                        }, 'image/png');
-                    };
-                    backgroundImage.onerror = () => reject(new Error("Failed to load background image"));
-                } else if (operation === 'color' && color) {
-                    ctx.fillStyle = color;
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(baseImage, 0, 0);
-                    canvas.toBlob(blob => {
-                        if (blob) resolve(new File([blob], `color_bg_${Date.now()}.png`, { type: 'image/png' }));
-                        else reject(new Error("Canvas to blob conversion failed"));
-                    }, 'image/png');
-                }
-            };
-            baseImage.onerror = () => reject(new Error("Failed to load base image"));
+                const file = new File([blob], fileName, { type: 'image/png' });
+                resolve(file);
+            }, 'image/png');
         });
     };
+    
+    
+    const handleApplySocialPost = async () => {
+        if (imageRef.current && imageRef.current.naturalWidth > 0 && currentImage) {
+            setError(null);
+            setIsLoading(true);
+            
+            const cropToApply: PixelCrop = (completedCrop?.width && completedCrop?.height)
+                ? completedCrop
+                : {
+                    x: 0,
+                    y: 0,
+                    width: imageRef.current.naturalWidth,
+                    height: imageRef.current.naturalHeight,
+                    unit: 'px',
+                };
 
+            try {
+                const compositedImageFile = await getCroppedAndCompositedImg(
+                    imageRef.current,
+                    cropToApply,
+                    `social_post_${Date.now()}.png`,
+                    socialText,
+                    socialTextPosition,
+                    socialFont,
+                    socialColor,
+                    socialShadow,
+                    socialFontSize
+                );
+                updateHistory(compositedImageFile);
+            } catch (err: any) {
+                setError(parseErrorMessage(err));
+            } finally {
+                setIsLoading(false);
+                setCrop(undefined);
+                setCompletedCrop(undefined);
+                setSocialText('');
+                setSocialTextPosition({ x: 50, y: 50 });
+                setSocialTitleSuggestions([]);
+            }
+        }
+    };
+    
+    const handleSuggestSocialTitles = async () => {
+        if (!currentImage) return;
 
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsSuggestingTitles(true);
+        setSocialTitleSuggestions([]);
+        try {
+            deductCredit();
+            const suggestions = await generateSocialPostTitle(currentImage);
+            setSocialTitleSuggestions(suggestions);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsSuggestingTitles(false);
+        }
+    };
+    
     const handleApplyBackgroundColor = async (color: string) => {
         if (!currentImage) return;
+        setError(null);
         setIsLoading(true);
+        // This is a placeholder for a more complex operation.
+        // For a real implementation, you would need a way to composite the foreground
+        // (presumably with a transparent background) onto a new background of the chosen color.
+        // This often requires the image to have been processed by 'remove background' first.
+        
+        // Simple canvas-based example:
         try {
-            // A dummy file is needed for the function signature, but not used for color operation
-            const dummyFile = new File([], "dummy.png");
-            const newFile = await applyOverlay(dummyFile, 'color', color);
-            updateHistory(newFile);
-        } catch (err: any) {
-            setError(err.message || "Failed to apply color background.");
-        } finally {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = color;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    
+                    canvas.toBlob(blob => {
+                        if (blob) {
+                            const newFile = new File([blob], `bg_color_${Date.now()}.png`, { type: 'image/png' });
+                            updateHistory(newFile);
+                        }
+                    }, 'image/png');
+                }
+                setIsLoading(false);
+            };
+            img.onerror = () => {
+                setError("Failed to load image for background color application.");
+                setIsLoading(false);
+            };
+            img.src = URL.createObjectURL(currentImage);
+        } catch (err) {
+            setError(parseErrorMessage(err));
             setIsLoading(false);
         }
     };
 
-    const handleApplyBackgroundImage = async (file: File) => {
+    const handleApplyBackgroundImage = async (backgroundImageFile: File) => {
         if (!currentImage) return;
+        setError(null);
         setIsLoading(true);
+
         try {
-            const newFile = await applyOverlay(file, 'background');
-            updateHistory(newFile);
-        } catch (err: any) {
-            setError(err.message || "Failed to apply background image.");
+            // This is a simplified example. A real implementation would likely use Gemini
+            // to composite the foreground from `currentImage` onto the `backgroundImageFile`.
+            const foregroundImg = new Image();
+            foregroundImg.crossOrigin = 'anonymous';
+            const backgroundImg = new Image();
+            backgroundImg.crossOrigin = 'anonymous';
+
+            const foregroundPromise = new Promise<void>((resolve, reject) => {
+                foregroundImg.onload = () => resolve();
+                foregroundImg.onerror = reject;
+                foregroundImg.src = URL.createObjectURL(currentImage);
+            });
+
+            const backgroundPromise = new Promise<void>((resolve, reject) => {
+                backgroundImg.onload = () => resolve();
+                backgroundImg.onerror = reject;
+                backgroundImg.src = URL.createObjectURL(backgroundImageFile);
+            });
+
+            await Promise.all([foregroundPromise, backgroundPromise]);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = backgroundImg.naturalWidth;
+            canvas.height = backgroundImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(backgroundImg, 0, 0);
+                // Draw foreground on top, scaled to fit. This is a naive approach.
+                // A better approach would be to maintain aspect ratio.
+                ctx.drawImage(foregroundImg, 0, 0, canvas.width, canvas.height);
+
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        const newFile = new File([blob], `bg_image_${Date.now()}.png`, { type: 'image/png' });
+                        updateHistory(newFile);
+                    }
+                }, 'image/png');
+            }
+        } catch (err) {
+            setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
     };
     
-    const handleUpscaleImage = async () => {
+    const handleGenerateTransparentBg = async () => {
         if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
         setIsLoading(true);
         try {
+            deductCredit();
+            const resultDataUrl = await generateTransparentBackground(currentImage);
+            const newFile = dataURLtoFile(resultDataUrl, `transparent_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleUpscaleImage = async () => {
+        if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsLoading(true);
+        try {
+            deductCredit();
             const resultDataUrl = await generateUpscaledImage(currentImage);
             const newFile = dataURLtoFile(resultDataUrl, `upscaled_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
-            setError(err.message || 'An unexpected error occurred during upscaling.');
+            setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
         }
     };
-    
-    const handleDownload = (format: 'image/png' | 'image/jpeg', quality = 0.92) => {
+
+    const handleDownload = (format: 'image/png' | 'image/jpeg', quality?: number) => {
         if (!currentImage || !currentImageUrl) return;
+    
+        const link = document.createElement('a');
         
-        const image = new Image();
-        image.src = currentImageUrl;
-        image.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = image.naturalWidth;
-            canvas.height = image.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
-            ctx.drawImage(image, 0, 0);
-            
-            const link = document.createElement('a');
-            const extension = format === 'image/jpeg' ? 'jpg' : 'png';
-            link.download = `edited_image.${extension}`;
-            link.href = canvas.toDataURL(format, quality);
+        if (format === 'image/jpeg') {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    link.href = dataUrl;
+                    link.download = `edited_image_${Date.now()}.jpg`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            };
+            img.src = currentImageUrl;
+        } else {
+            link.href = currentImageUrl;
+            link.download = `edited_image_${Date.now()}.png`;
+            document.body.appendChild(link);
             link.click();
-            setIsDownloadModalOpen(false);
-        };
+            document.body.removeChild(link);
+        }
+    
+        setIsDownloadModalOpen(false);
     };
 
+    const handleTextMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!imageRef.current) return;
+        setIsDraggingText(true);
+        const rect = imageRef.current.getBoundingClientRect();
+        dragStartRef.current = {
+            mouseX: e.clientX,
+            mouseY: e.clientY,
+            textX: socialTextPosition.x,
+            textY: socialTextPosition.y,
+        };
+        // Prevent text selection while dragging
+        e.preventDefault();
+    };
 
-    if (!currentImage && !isRestoring) {
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!isDraggingText || !dragStartRef.current || !imageRef.current) return;
+
+        const rect = imageRef.current.getBoundingClientRect();
+        const deltaX = e.clientX - dragStartRef.current.mouseX;
+        const deltaY = e.clientY - dragStartRef.current.mouseY;
+
+        // Convert pixel delta to percentage delta
+        const deltaPercentX = (deltaX / rect.width) * 100;
+        const deltaPercentY = (deltaY / rect.height) * 100;
+
+        let newX = dragStartRef.current.textX + deltaPercentX;
+        let newY = dragStartRef.current.textY + deltaPercentY;
+
+        // Clamp values between 0 and 100
+        newX = Math.max(0, Math.min(100, newX));
+        newY = Math.max(0, Math.min(100, newY));
+
+        setSocialTextPosition({ x: newX, y: newY });
+    }, [isDraggingText]);
+
+    const handleMouseUp = useCallback(() => {
+        setIsDraggingText(false);
+        dragStartRef.current = null;
+    }, []);
+
+    useEffect(() => {
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [handleMouseMove, handleMouseUp]);
+
+
+    if (isRestoring) {
+        return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>
+    }
+    
+    if (!originalImage) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen p-4">
+            <div className="w-full min-h-screen flex items-center justify-center">
                 <StartScreen onFileSelect={handleFileSelect} />
             </div>
         );
     }
     
-    if (isRestoring) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-screen p-4">
-                 <Spinner />
-            </div>
-        );
-    }
-
-    const renderPanel = () => {
-        switch (activeTool) {
-            case 'retouch':
-                return <RetouchPanel 
-                            onApplyRetouch={handleApplyRetouch} 
-                            isLoading={isLoading}
-                            radius={hotspotRadius}
-                            onRadiusChange={setHotspotRadius}
-                            isHotspotSet={!!hotspot}
-                            referenceImage={referenceImage}
-                            onReferenceImageChange={setReferenceImage}
-                        />;
-            case 'filter':
-                return <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} />;
-            case 'adjust':
-                return <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} />;
-            case 'crop':
-                return <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={setCropAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />;
-            case 'background':
-                return <BackgroundPanel 
-                            onGenerateTransparentBackground={handleGenerateTransparentBackground} 
-                            onApplyBackgroundColor={handleApplyBackgroundColor}
-                            onApplyBackgroundImage={handleApplyBackgroundImage}
-                            isLoading={isLoading} 
-                        />;
-            case 'upscale':
-                return <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} />;
-            default:
-                return null;
-        }
-    };
-
     return (
-        <div className="flex flex-col h-screen overflow-hidden">
-            <Header />
-            <main className="flex-grow flex flex-col md:flex-row gap-8 p-8 overflow-hidden">
-                {/* Left Panel: Toolbar */}
-                <aside className="flex flex-col gap-6">
-                    {/* Main Tools */}
-                    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-2 flex flex-row md:flex-col items-center gap-2 backdrop-blur-sm">
-                       {tools.map(tool => (
-                            <button 
+        <div className="w-full min-h-screen flex flex-col bg-gray-900 text-gray-100">
+            <Header credits={credits} onRefillCredits={refillCredits} />
+            <div className="flex flex-grow overflow-hidden">
+                {/* Left Toolbar */}
+                <aside className="w-80 bg-gray-900/50 border-r border-gray-700 p-4 flex flex-col gap-4 overflow-y-auto min-h-0">
+                    <div className="grid grid-cols-2 gap-2">
+                        <button onClick={handleUndo} disabled={historyIndex <= 0 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <UndoIcon className="w-5 h-5"/> Undo
+                        </button>
+                        <button onClick={handleRedo} disabled={historyIndex >= history.length - 1 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <RedoIcon className="w-5 h-5"/> Redo
+                        </button>
+                    </div>
+
+                    <div className="w-full border-t border-gray-700 my-2"></div>
+
+                    <nav className="flex flex-col gap-2">
+                        {tools.map(tool => (
+                            <button
                                 key={tool.name}
                                 onClick={() => handleToolSelect(tool.name)}
                                 disabled={isLoading}
-                                className={`w-20 h-20 rounded-lg flex flex-col items-center justify-center gap-1 transition-all duration-200 border-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
-                                    ${activeTool === tool.name 
-                                        ? 'bg-amber-500/20 text-amber-300 border-amber-400' 
-                                        : 'bg-gray-800/50 border-gray-700 hover:bg-gray-700/70 text-gray-300'
-                                    }`}
-                                aria-label={tool.label}
-                            >
-                                <tool.icon className="w-6 h-6" />
-                                <span className="text-xs font-semibold">{tool.label}</span>
-                            </button>
-                       ))}
-                    </div>
-
-                    {/* History & View Controls */}
-                    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-2 flex flex-row md:flex-col items-center gap-2 backdrop-blur-sm">
-                        <button onClick={handleUndo} disabled={historyIndex <= 0 || isLoading} className="w-20 h-20 rounded-lg flex flex-col items-center justify-center gap-1 bg-gray-800/50 border-2 border-gray-700 hover:bg-gray-700/70 text-gray-300 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <UndoIcon className="w-6 h-6" />
-                            <span className="text-xs font-semibold">Undo</span>
-                        </button>
-                        <button onClick={handleRedo} disabled={historyIndex >= history.length - 1 || isLoading} className="w-20 h-20 rounded-lg flex flex-col items-center justify-center gap-1 bg-gray-800/50 border-2 border-gray-700 hover:bg-gray-700/70 text-gray-300 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <RedoIcon className="w-6 h-6" />
-                            <span className="text-xs font-semibold">Redo</span>
-                        </button>
-                        <button
-                            onClick={handleCompareToggle}
-                            disabled={historyIndex <= 0 || isLoading}
-                            className={`w-20 h-20 rounded-lg flex flex-col items-center justify-center gap-1 transition-all duration-200 border-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
-                                ${isComparing
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-400' 
-                                    : 'bg-gray-800/50 border-gray-700 hover:bg-gray-700/70 text-gray-300'
+                                className={`w-full flex items-center gap-3 text-left p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
+                                    activeTool === tool.name ? 'bg-amber-500/20 text-amber-300' : 'text-gray-300 hover:bg-white/10'
                                 }`}
-                            aria-label="Compare with previous"
-                        >
-                            <CompareIcon className="w-6 h-6" />
-                            <span className="text-xs font-semibold">Compare</span>
-                        </button>
-                         <button 
-                            onMouseDown={() => setShowOriginal(true)} 
-                            onMouseUp={() => setShowOriginal(false)}
-                            onMouseLeave={() => setShowOriginal(false)}
-                            disabled={isLoading} 
-                            className="w-20 h-20 rounded-lg flex flex-col items-center justify-center gap-1 bg-gray-800/50 border-2 border-gray-700 hover:bg-gray-700/70 text-gray-300 transition-all active:scale-95 disabled:opacity-50"
-                            aria-label="Hold to view original"
-                        >
-                            <EyeIcon className="w-6 h-6" />
-                            <span className="text-xs font-semibold">Original</span>
-                        </button>
-                    </div>
-                </aside>
+                            >
+                                <tool.icon className="w-6 h-6"/>
+                                {tool.label}
+                            </button>
+                        ))}
+                    </nav>
 
-                {/* Center Panel: Image Canvas */}
-                <section className="flex-grow flex flex-col items-center justify-center relative overflow-hidden bg-black/30 rounded-lg border border-gray-700">
-                   {isLoading && (
-                        <div className="absolute inset-0 bg-black/60 z-20 flex flex-col items-center justify-center gap-4 backdrop-blur-sm animate-fade-in">
-                            <Spinner />
-                            <p className="text-lg font-semibold text-gray-200">Applying AI magic...</p>
-                        </div>
-                   )}
-                   {error && <div className="absolute top-4 left-4 right-4 bg-red-500/80 text-white p-4 rounded-lg z-30 animate-fade-in">{error}</div>}
-                   
-                   <div className="w-full h-full flex items-center justify-center p-4">
-                        {currentImageUrl && (
-                            isComparing && previousImageUrl ? (
-                                <ReactCompareSlider
-                                    className="w-full h-full"
-                                    itemOne={<img src={previousImageUrl} alt="Previous" className="max-w-none w-full h-full object-contain" />}
-                                    itemTwo={<img src={currentImageUrl} alt="Current" className="max-w-none w-full h-full object-contain" />}
-                                    style={{ width: '100%', height: '100%' }}
-                                />
-                            ) :
-                            showOriginal && originalImageUrl ? (
-                                <img
-                                    ref={imageRef}
-                                    src={originalImageUrl}
-                                    alt="Original"
-                                    className="max-w-full max-h-full object-contain"
-                                />
-                            ) : (
-                                activeTool === 'crop' ? (
-                                    <ReactCrop
-                                        crop={crop}
-                                        onChange={c => setCrop(c)}
-                                        onComplete={c => setCompletedCrop({ ...c })}
-                                        aspect={cropAspect}
-                                    >
-                                        <img
-                                            ref={imageRef}
-                                            src={currentImageUrl}
-                                            alt="Editable image"
-                                            className="max-w-full max-h-full object-contain"
-                                        />
-                                    </ReactCrop>
-                                ) : (
-                                    <div className="relative">
-                                        <img
-                                            ref={imageRef}
-                                            src={currentImageUrl}
-                                            alt="Current edit"
-                                            className={`max-w-full max-h-full object-contain ${activeTool === 'retouch' ? 'cursor-crosshair' : ''}`}
-                                            onClick={handleImageClick}
-                                        />
-                                        {hotspot && imageRef.current && (
-                                            <div 
-                                                className="absolute border-2 border-dashed border-white rounded-full pointer-events-none"
-                                                style={{
-                                                    left: `${(hotspot.x / imageRef.current.naturalWidth) * 100}%`,
-                                                    top: `${(hotspot.y / imageRef.current.naturalHeight) * 100}%`,
-                                                    width: `${(hotspotRadius * 2 / imageRef.current.naturalWidth) * 100}%`,
-                                                    height: `${(hotspotRadius * 2 / imageRef.current.naturalHeight) * 100}%`,
-                                                    transform: 'translate(-50%, -50%)',
-                                                }}
-                                            />
-                                        )}
-                                    </div>
-                                )
-                            )
-                        )}
-                   </div>
-                </section>
+                    <div className="w-full border-t border-gray-700 my-2"></div>
 
-                {/* Right Panel: Tool Options */}
-                <aside className="w-full md:w-[420px] lg:w-[480px] flex-shrink-0 flex flex-col gap-6 overflow-y-auto">
-                    <div className="flex-grow flex items-center">
-                        {renderPanel()}
-                    </div>
-                    <div className="flex flex-col gap-3">
-                         <button 
-                            onClick={() => setIsDownloadModalOpen(true)}
-                            disabled={isLoading}
-                            className="w-full text-center bg-amber-500 text-white font-bold py-4 px-6 rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:bg-amber-400 hover:-translate-y-px active:scale-95 active:shadow-inner text-base disabled:bg-amber-800 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none"
-                         >
-                            Download Image
-                        </button>
-                        <label htmlFor="image-upload-main" className="w-full text-center bg-white/10 text-white font-semibold py-3 px-4 rounded-lg transition-colors hover:bg-white/20 active:scale-95 text-base cursor-pointer disabled:opacity-50">
-                            <div className="flex items-center justify-center gap-2">
-                                <UploadIcon className="w-5 h-5"/>
-                                Upload Another
-                            </div>
+                    <div className="relative">
+                        <label htmlFor="new-upload" className="w-full cursor-pointer flex items-center justify-center gap-3 text-left p-3 rounded-lg text-base transition-colors text-gray-300 hover:bg-white/10">
+                            <UploadIcon className="w-6 h-6"/> New Image...
                         </label>
-                        <input id="image-upload-main" type="file" className="hidden" accept="image/*" onChange={handleFileUpload} disabled={isLoading} />
+                        <input id="new-upload" type="file" ref={newUploadInputRef} onChange={handleNewUpload} accept={SUPPORTED_MIME_TYPES.join(',')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/>
                     </div>
+                    
+                    <div className="mt-auto flex flex-col gap-2 pt-8">
+                         <div className="flex items-center gap-2">
+                            <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" title="Hold to see original">
+                                <EyeIcon className="w-5 h-5"/> Original
+                            </button>
+                            <button onClick={handleCompareToggle} disabled={historyIndex <= 0 || isLoading} className={`relative flex items-center justify-center gap-2 w-14 h-full bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isComparing ? 'text-amber-400' : ''}`}>
+                                <CompareIcon className="w-6 h-6"/>
+                            </button>
+                        </div>
+                        <button onClick={() => setIsDownloadModalOpen(true)} className="w-full flex items-center justify-center gap-3 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/30 active:scale-95">
+                            <DownloadIcon className="w-6 h-6"/> Download
+                        </button>
+                    </div>
+
                 </aside>
-            </main>
-            <DownloadModal 
-                isOpen={isDownloadModalOpen}
-                onClose={() => setIsDownloadModalOpen(false)}
-                onDownload={handleDownload}
-                imageSrc={currentImageUrl}
-            />
+
+                {/* Main Content */}
+                <main ref={imageContainerRef} className="relative flex-grow flex items-center justify-center overflow-hidden p-4 md:p-8">
+                    {/* Error Display */}
+                    {error && (
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-800/80 border border-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
+                            <p>{error}</p>
+                            <button onClick={() => setError(null)} className="absolute top-1 right-2 text-2xl leading-none">&times;</button>
+                        </div>
+                    )}
+                    
+                    {currentImageUrl && (
+                        <div className="relative max-w-full max-h-full flex items-center justify-center">
+                            {isLoading && (
+                                <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-20 gap-4 backdrop-blur-sm">
+                                    <Spinner />
+                                    <p className="text-lg font-semibold text-gray-200">Processing your image...</p>
+                                </div>
+                            )}
+
+                            {!isLoading && (
+                                <>
+                                    {isComparing && originalImageUrl ? (
+                                        <ReactCompareSlider
+                                            className="max-w-full max-h-full"
+                                            itemOne={<img src={originalImageUrl} alt="Original" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
+                                            itemTwo={<img src={currentImageUrl} alt="Current" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
+                                        />
+                                    ) : (activeTool === 'crop' || activeTool === 'social' || activeTool === 'erase') ? (
+                                        <ReactCrop
+                                            crop={activeTool === 'erase' ? eraseSelection : crop}
+                                            onChange={(_, percentCrop) => {
+                                                if (activeTool === 'erase') {
+                                                    setEraseSelection(percentCrop);
+                                                } else {
+                                                    setCrop(percentCrop);
+                                                }
+                                            }}
+                                            onComplete={(c) => {
+                                                if (activeTool === 'erase') {
+                                                    setCompletedEraseSelection(c);
+                                                } else {
+                                                    setCompletedCrop(c);
+                                                }
+                                            }}
+                                            aspect={activeTool === 'erase' ? undefined : cropAspect}
+                                            className="max-w-full max-h-full"
+                                        >
+                                            <img
+                                                ref={imageRef}
+                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                alt="Editable image"
+                                                className="max-w-full max-h-full object-contain"
+                                                onLoad={onImageLoad}
+                                                crossOrigin="anonymous"
+                                            />
+                                        </ReactCrop>
+                                    ) : (
+                                        <div className="relative">
+                                            <img
+                                                ref={imageRef}
+                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                alt="Editable image"
+                                                className="max-w-full max-h-full object-contain"
+                                                onClick={handleImageClick}
+                                                style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
+                                                crossOrigin="anonymous"
+                                            />
+                                             {hotspot && activeTool === 'retouch' && (
+                                                <div
+                                                    className="absolute border-2 border-dashed border-amber-400 bg-amber-400/20 rounded-full pointer-events-none animate-pulse"
+                                                    style={{
+                                                        left: `calc(${(hotspot.x / (imageRef.current?.naturalWidth || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                        top: `calc(${(hotspot.y / (imageRef.current?.naturalHeight || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                        width: `${hotspotRadius * 2}px`,
+                                                        height: `${hotspotRadius * 2}px`,
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {activeTool === 'social' && socialText && (
+                                        <div 
+                                            ref={textOverlayRef}
+                                            onMouseDown={handleTextMouseDown}
+                                            className="absolute p-2 rounded-lg font-bold cursor-move select-none text-center"
+                                            style={{
+                                                left: `${socialTextPosition.x}%`,
+                                                top: `${socialTextPosition.y}%`,
+                                                transform: 'translate(-50%, -50%)',
+                                                fontSize: `${socialFontSize}vw`,
+                                                fontFamily: socialFont,
+                                                color: socialColor,
+                                                textShadow: socialShadow,
+                                                width: '90%',
+                                            }}
+                                        >
+                                            {socialText}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </main>
+
+                {/* Right Panel */}
+                <aside className="w-96 bg-gray-900/50 border-l border-gray-700 p-4 flex flex-col items-center justify-center">
+                    {!activeTool && <div className="text-gray-400 text-center">Select a tool from the left to begin editing.</div>}
+                    {activeTool === 'retouch' && <RetouchPanel onApplyRetouch={handleApplyRetouch} isLoading={isLoading} radius={hotspotRadius} onRadiusChange={setHotspotRadius} isHotspotSet={!!hotspot} referenceImage={referenceImage} onReferenceImageChange={setReferenceImage} credits={credits} />}
+                    {activeTool === 'erase' && <ErasePanel onApplyErase={handleApplyErase} isLoading={isLoading} isSelectionMade={!!(completedEraseSelection && completedEraseSelection.width > 0)} credits={credits}/>}
+                    {activeTool === 'filter' && <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />}
+                    {activeTool === 'background' && <BackgroundPanel onGenerateTransparentBackground={handleGenerateTransparentBg} onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits}/>}
+                    {activeTool === 'social' && (
+                        <SocialPanel 
+                            onApplySocialPost={handleApplySocialPost} 
+                            onSetAspect={handleSetAspect} 
+                            socialText={socialText} 
+                            onSocialTextChange={setSocialText} 
+                            isLoading={isLoading} 
+                            isCropping={!!imageDimensions} 
+                            onSuggestTitles={handleSuggestSocialTitles} 
+                            isSuggestingTitles={isSuggestingTitles} 
+                            titleSuggestions={socialTitleSuggestions}
+                            socialFont={socialFont}
+                            onSocialFontChange={setSocialFont}
+                            socialColor={socialColor}
+                            onSocialColorChange={setSocialColor}
+                            socialShadow={socialShadow}
+                            onSocialShadowChange={setSocialShadow}
+                            socialFontSize={socialFontSize}
+                            onSocialFontSizeChange={setSocialFontSize}
+                            credits={credits}
+                        />
+                    )}
+                </aside>
+            </div>
+            <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
         </div>
     );
 };

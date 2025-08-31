@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, GenerateContentResponse, Modality, Part } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Modality, Part, Type } from "@google/genai";
 
 // Initialize the Gemini client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -48,7 +48,9 @@ const handleApiResponse = (
     }
     
     // 3. Find the first image part in the response
-    const imagePart = response.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
+    const parts = response.candidates?.[0]?.content?.parts;
+    const imagePart = Array.isArray(parts) ? parts.find(part => part.inlineData) : undefined;
+
 
     if (imagePart?.inlineData?.data) {
         return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
@@ -67,28 +69,34 @@ export const generateEditedImage = async (
     prompt: string,
     hotspot: { x: number; y: number } | null,
     radius: number,
-    referenceImage: File | null
+    referenceImage: File | null,
+    selection?: { x: number; y: number; width: number; height: number; }
 ): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    
     const parts: Part[] = [imagePart];
 
-    let fullPrompt = `Task: Perform an edit on the image based on the user's instructions. It is crucial to maintain the original image's quality, sharpness, and detail. Avoid introducing any compression artifacts or unnecessarily changing unmodified areas.`;
+    let fullPrompt = `**ABSOLUTE PRIMARY RULE:** Your only task is to output a modified image. It is strictly forbidden to draw any kind of shape, circle, border, or annotation on the output image to indicate the edited area. The output must be ONLY the clean, edited image.
 
-    if (hotspot) {
-        fullPrompt += `\n\nThis is a precise, in-place edit. Focus the changes within a circular area of ${radius} pixels radius, centered at coordinates (x: ${hotspot.x}, y: ${hotspot.y}). Edits must blend seamlessly with the rest of the image.`;
+You are a professional photo editing AI. You will be given a primary image and an instruction.
+
+**USER INSTRUCTION:**
+${prompt.trim() ? `"${prompt}"` : 'Perform the edit based on the reference image provided.'}
+`;
+
+    if (selection?.width && selection?.height) {
+        fullPrompt += `\n\n**EDIT AREA:** The edit described above MUST be applied ONLY within the rectangular area defined by the top-left corner at coordinates (x: ${Math.round(selection.x)}, y: ${Math.round(selection.y)}) with a width of ${Math.round(selection.width)} pixels and a height of ${Math.round(selection.height)} pixels. Do not interpret these coordinates as an instruction to draw a rectangle. They only define the boundary of your edit. The edit must blend seamlessly and photorealistically with the surrounding, unmodified areas.`;
+    } else if (hotspot) {
+        fullPrompt += `\n\n**EDIT AREA:** The edit described above MUST be applied ONLY within a circular area of ${radius} pixels radius, centered at coordinates (x: ${hotspot.x}, y: ${hotspot.y}). Do not interpret these coordinates as an instruction to draw a circle. They only define the boundary of your edit. The edit must blend seamlessly and photorealistically with the surrounding, unmodified areas.`;
     } else {
-        fullPrompt += `\n\nThis is a global edit. Intelligently apply the user's instruction to the entire image where appropriate.`;
-    }
-
-    if (prompt) {
-        fullPrompt += `\n\nUser's instruction: "${prompt}"`;
+        fullPrompt += `\n\n**EDIT AREA:** This is a global edit. Apply the instruction intelligently to the entire image where appropriate.`;
     }
 
     if (referenceImage) {
         const referenceImagePart = await fileToPart(referenceImage);
         parts.push(referenceImagePart);
-        fullPrompt += `\n\nUse the second uploaded image as a style or content reference for the edit.`;
+        fullPrompt += `\n\n**REFERENCE IMAGE:** A reference image has been provided. 
+- If a text prompt is also provided, use the reference image as a *style reference* for the edit described in the text.
+- If no text prompt is provided, use the content from the reference image to *replace* the content in the primary image's edit area, blending it photorealistically.`;
     }
     
     parts.push({ text: fullPrompt });
@@ -101,13 +109,14 @@ export const generateEditedImage = async (
         },
     });
 
-    return handleApiResponse(response, 'retouch');
+    return handleApiResponse(response, "edit");
 };
-
 
 export const generateFilteredImage = async (imageFile: File, prompt: string): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `Apply the following artistic filter to the entire image: "${prompt}". It is crucial to preserve the original image's quality, details, and resolution. Avoid introducing compression artifacts. The output should be only the modified image.`;
+    const fullPrompt = `You are a professional photo editing AI. Your task is to apply a filter or style to the provided image based on the user's request. **Your ONLY output must be the modified image.** Do not add text or any other elements unless explicitly asked.
+
+**USER REQUEST:** Apply the following style: "${prompt}"`;
     
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
@@ -117,14 +126,15 @@ export const generateFilteredImage = async (imageFile: File, prompt: string): Pr
         },
     });
 
-    return handleApiResponse(response, 'filter');
+    return handleApiResponse(response, "filter");
 };
-
 
 export const generateAdjustedImage = async (imageFile: File, prompt: string): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `Apply the following professional photo adjustment to the image: "${prompt}". It is crucial to preserve the original image's quality, details, and resolution. Avoid introducing compression artifacts. The output should be only the modified image.`;
+    const fullPrompt = `You are a professional photo editing AI. Your task is to perform a photorealistic adjustment to the provided image based on the user's request. Examples include changing lighting, enhancing details, or blurring the background. **Your ONLY output must be the modified image.**
 
+**USER REQUEST:** Perform the following adjustment: "${prompt}"`;
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
         contents: { parts: [imagePart, { text: fullPrompt }] },
@@ -132,37 +142,78 @@ export const generateAdjustedImage = async (imageFile: File, prompt: string): Pr
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
     });
-
-    return handleApiResponse(response, 'adjustment');
+    
+    return handleApiResponse(response, "adjustment");
 };
 
 
 export const generateTransparentBackground = async (imageFile: File): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const prompt = "Please segment the main subject from the background. Make the background transparent. Preserve the quality and fine details of the subject, especially around the edges like hair or fur. The output should be a PNG with a transparent background.";
-
+    const promptPart = { text: "Remove the background from this image, leaving only the main subject with a transparent background. The output must be a PNG with a transparent background." };
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
-        contents: { parts: [imagePart, { text: prompt }] },
+        contents: { parts: [imagePart, promptPart] },
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
     });
-
-    return handleApiResponse(response, 'background removal');
+    
+    return handleApiResponse(response, "background removal");
 };
+
 
 export const generateUpscaledImage = async (imageFile: File): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const prompt = "Upscale this image to twice its original resolution (2x). Enhance the details and sharpness naturally during the upscaling process. It is crucial to preserve the original image's quality and avoid introducing any artifacts. The output should be only the upscaled image.";
-
+    const promptPart = { text: "Upscale this image to twice its original resolution. Enhance details and sharpness photorealistically. The output must have the exact same content and aspect ratio, just higher resolution." };
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
-        contents: { parts: [imagePart, { text: prompt }] },
+        contents: { parts: [imagePart, promptPart] },
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
     });
 
-    return handleApiResponse(response, 'upscaling');
+    return handleApiResponse(response, "upscale");
+};
+
+export const generateSocialPostTitle = async (imageFile: File): Promise<string[]> => {
+    const imagePart = await fileToPart(imageFile);
+    const textPart = {
+        text: `Analyze this image and suggest 5 catchy, short titles suitable for a YouTube thumbnail or Pinterest pin. The titles should be engaging and relevant to the image content. Keep them concise.`
+    };
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [textPart, imagePart] },
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    suggestions: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.STRING
+                        }
+                    }
+                },
+                required: ["suggestions"]
+            }
+        }
+    });
+
+    try {
+        const jsonText = response.text.trim();
+        const result = JSON.parse(jsonText);
+        if (result && Array.isArray(result.suggestions)) {
+            return result.suggestions.slice(0, 5); // Ensure we only return 5
+        }
+        console.warn("AI returned valid JSON but 'suggestions' array is missing.", result);
+        return [];
+    } catch (e) {
+        console.error("Failed to parse social title suggestions:", e, "Raw text:", response.text);
+        throw new Error("The AI returned an unexpected format for title suggestions.");
+    }
 };
