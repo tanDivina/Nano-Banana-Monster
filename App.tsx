@@ -7,7 +7,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import { ReactCompareSlider } from 'react-compare-slider';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle, generateProductScene } from './services/geminiService';
+import { saveSession, loadSession, clearSession } from './services/dbService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
 import FilterPanel from './components/FilterPanel';
@@ -19,8 +20,10 @@ import DownloadModal from './components/DownloadModal';
 import RetouchPanel from './components/RetouchPanel';
 import SocialPanel from './components/SocialPanel';
 import ErasePanel from './components/ErasePanel';
-import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon } from './components/icons';
+import ProductStudioPanel from './components/ProductStudioPanel';
+import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon, StudioIcon } from './components/icons';
 import StartScreen from './components/StartScreen';
+import BatchEditor from './components/BatchEditor';
 
 // Helper to convert a data URL string to a File object
 const dataURLtoFile = (dataurl: string, filename: string): File => {
@@ -74,7 +77,7 @@ function centerAspectCrop(
     };
 }
 
-type Tool = 'retouch' | 'erase' | 'filter' | 'adjust' | 'crop' | 'background' | 'upscale' | 'social' | null;
+type Tool = 'retouch' | 'erase' | 'filter' | 'adjust' | 'crop' | 'background' | 'upscale' | 'social' | 'studio' | null;
 
 const tools = [
   { name: 'retouch', label: 'Retouch', icon: RetouchIcon },
@@ -84,6 +87,7 @@ const tools = [
   { name: 'crop', label: 'Crop', icon: CropIcon },
   { name: 'background', label: 'Background', icon: BackgroundIcon },
   { name: 'upscale', label: 'Upscale', icon: UpscaleIcon },
+  { name: 'studio', label: 'Studio', icon: StudioIcon },
   { name: 'social', label: 'Social Post', icon: HeartIcon },
 ] as const;
 
@@ -91,6 +95,8 @@ const SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gi
 const INITIAL_CREDITS = 25;
 
 const App: React.FC = () => {
+    const [editMode, setEditMode] = useState<'single' | 'batch'>('single');
+    const [batchFiles, setBatchFiles] = useState<File[]>([]);
     const [history, setHistory] = useState<File[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [isLoading, setIsLoading] = useState(false);
@@ -143,54 +149,49 @@ const App: React.FC = () => {
         setImageDimensions({ width, height });
     };
 
-    // Save session to localStorage
+    // Save session to IndexedDB
     useEffect(() => {
-        if (isRestoring) return;
-        const saveSession = async () => {
-            if (history.length > 0) {
-                const historyAsDataUrls = await Promise.all(history.map(file => {
-                    return new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve({
-                            dataUrl: reader.result as string,
-                            name: file.name,
-                            type: file.type
-                        });
-                        reader.onerror = reject;
-                        reader.readAsDataURL(file);
-                    });
-                }));
-                const sessionData = JSON.stringify({ history: historyAsDataUrls, historyIndex, credits });
-                localStorage.setItem('edit-session', sessionData);
-            } else {
-                localStorage.removeItem('edit-session');
-            }
-        };
-        saveSession();
-    }, [history, historyIndex, credits, isRestoring]);
-
-    // Load session from localStorage on mount
-    useEffect(() => {
-        const loadSession = async () => {
+        if (isRestoring || editMode === 'batch') return;
+        const save = async () => {
             try {
-                const savedSession = localStorage.getItem('edit-session');
-                if (savedSession) {
-                    const { history: historyAsDataUrls, historyIndex: savedIndex, credits: savedCredits } = JSON.parse(savedSession);
-                    const reconstructedHistory = historyAsDataUrls.map((item: any) =>
-                        dataURLtoFile(item.dataUrl, item.name)
-                    );
-                    setHistory(reconstructedHistory);
-                    setHistoryIndex(savedIndex);
-                    setCredits(savedCredits ?? INITIAL_CREDITS);
+                if (history.length > 0) {
+                    await saveSession({ history, historyIndex, credits });
+                } else {
+                    await clearSession();
                 }
             } catch (err) {
-                console.error("Failed to load session:", err);
-                localStorage.removeItem('edit-session'); // Clear corrupted data
+                console.error("Error saving session to IndexedDB:", err);
+            }
+        };
+        save();
+    }, [history, historyIndex, credits, isRestoring, editMode]);
+
+    // Load session from IndexedDB on mount
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const savedSession = await loadSession();
+                if (savedSession && savedSession.history.length > 0) {
+                     // Ensure files are actual File objects, as IndexedDB can sometimes return plain objects
+                    // FIX: Add `any` type to `f` to prevent TypeScript from inferring it as `never` in the else branch.
+                    const reconstructedHistory = savedSession.history.map((f: any) => {
+                        if (f instanceof File) return f;
+                        // Reconstruct if it's not a File instance
+                        return new File([f], f.name, { type: f.type, lastModified: f.lastModified });
+                    });
+                    setHistory(reconstructedHistory);
+                    setHistoryIndex(savedSession.historyIndex);
+                    setCredits(savedSession.credits ?? INITIAL_CREDITS);
+                    setEditMode('single');
+                }
+            } catch (err) {
+                console.error("Failed to load session from IndexedDB:", err);
+                await clearSession().catch(clearErr => console.error("Failed to clear session after load error:", clearErr));
             } finally {
                 setIsRestoring(false);
             }
         };
-        loadSession();
+        load();
     }, []);
 
     const parseErrorMessage = (error: any): string => {
@@ -229,6 +230,10 @@ const App: React.FC = () => {
 
     const deductCredit = () => {
         setCredits(prev => Math.max(0, prev - 1));
+    };
+    
+    const deductCredits = (amount: number) => {
+        setCredits(prev => Math.max(0, prev - amount));
     };
 
     const refillCredits = () => {
@@ -272,11 +277,32 @@ const App: React.FC = () => {
         setSocialShadow('2px 2px 4px rgba(0,0,0,0.8)');
         setSocialFontSize(6);
         setCredits(INITIAL_CREDITS);
+        setEditMode('single'); // Ensure single edit mode
+        clearSession().catch(err => console.error("Failed to clear session:", err));
     };
 
     const handleFileSelect = (files: FileList | null) => {
         if (files && files[0]) {
             resetAndLoadImage(files[0]);
+        }
+    };
+
+    const handleBatchFileSelect = (files: FileList | null) => {
+        if (files && files.length > 0) {
+            const validFiles = Array.from(files).filter(file => SUPPORTED_MIME_TYPES.includes(file.type));
+            if (validFiles.length === 0) {
+                setError(`No supported file types found. Please upload JPEG, PNG, or WEBP images.`);
+                return;
+            }
+            if (validFiles.length < files.length) {
+                setError(`Some files were not supported and have been ignored.`);
+            } else {
+                setError(null);
+            }
+            setBatchFiles(validFiles);
+            setEditMode('batch');
+            setCredits(INITIAL_CREDITS);
+            clearSession().catch(err => console.error("Failed to clear session:", err));
         }
     };
     
@@ -453,6 +479,28 @@ const App: React.FC = () => {
             deductCredit();
             const resultDataUrl = await generateAdjustedImage(currentImage, prompt);
             const newFile = dataURLtoFile(resultDataUrl, `adjusted_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleApplyProductScene = async (prompt: string) => {
+        if (!currentImage) return;
+
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsLoading(true);
+        try {
+            deductCredit();
+            const resultDataUrl = await generateProductScene(currentImage, prompt);
+            const newFile = dataURLtoFile(resultDataUrl, `scene_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
             setError(parseErrorMessage(err));
@@ -962,10 +1010,23 @@ const App: React.FC = () => {
         return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>
     }
     
+    if (editMode === 'batch') {
+        return (
+            <BatchEditor 
+                files={batchFiles} 
+                onExit={() => { setEditMode('single'); setBatchFiles([]); }}
+                credits={credits}
+                onRefillCredits={refillCredits}
+                onDeductCredits={deductCredits}
+                parseErrorMessage={parseErrorMessage}
+            />
+        );
+    }
+
     if (!originalImage) {
         return (
             <div className="w-full min-h-screen flex items-center justify-center">
-                <StartScreen onFileSelect={handleFileSelect} />
+                <StartScreen onFileSelect={handleFileSelect} onBatchFileSelect={handleBatchFileSelect} />
             </div>
         );
     }
@@ -1144,6 +1205,7 @@ const App: React.FC = () => {
                     {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />}
                     {activeTool === 'background' && <BackgroundPanel onGenerateTransparentBackground={handleGenerateTransparentBg} onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits}/>}
+                    {activeTool === 'studio' && <ProductStudioPanel onApplyScene={handleApplyProductScene} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'social' && (
                         <SocialPanel 
                             onApplySocialPost={handleApplySocialPost} 

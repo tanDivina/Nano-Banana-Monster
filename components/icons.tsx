@@ -116,3 +116,16 @@ export const WandIcon: React.FC<{ className?: string }> = ({ className }) => (
       <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.998 15.998 0 011.622-3.385m5.043.025a15.998 15.998 0 001.622-3.385m3.388 1.62a15.998 15.998 0 01-1.622 3.385m-5.043-.025a15.998 15.998 0 00-3.388 1.62m7.5 0a4.5 4.5 0 00-4.5-4.5m4.5 4.5a4.5 4.5 0 01-4.5-4.5m0 0a4.5 4.5 0 014.5-4.5m-4.5 4.5a4.5 4.5 0 00-4.5 4.5m-1.622 3.385a15.998 15.998 0 01-1.622-3.385m0 0a15.998 15.998 0 013.388-1.622m-1.766 5.007a15.998 15.998 0 01-3.388 1.622m0 0a15.998 15.998 0 013.388 1.622m0 0a15.998 15.998 0 003.388-1.622m-1.766-5.007a15.998 15.998 0 00-3.388-1.622m0 0a15.998 15.998 0 001.622 3.385" />
     </svg>
 );
+
+export const StudioIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25m-9-5.25v9l9 5.25m0-9v9" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5v9l9 5.25" />
+    </svg>
+);
+
+export const StackIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L12 15.25l5.571-3m-11.142 0l4.179 2.25m0 0l5.571 3m5.571-3l-4.179-2.25m0 0l-5.571 3-5.571-3m11.142 0L12 6.75l-5.571 3" />
+    </svg>
+);

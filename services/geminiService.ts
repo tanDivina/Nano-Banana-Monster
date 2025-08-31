@@ -178,6 +178,29 @@ export const generateUpscaledImage = async (imageFile: File): Promise<string> =>
     return handleApiResponse(response, "upscale");
 };
 
+export const generateProductScene = async (imageFile: File, prompt: string): Promise<string> => {
+    const imagePart = await fileToPart(imageFile);
+    const fullPrompt = `You are an expert product photography AI. Your task is to take the user's image, identify and isolate the main product, and then place it into a new, photorealistic scene based on the user's prompt.
+
+**CRITICAL INSTRUCTIONS:**
+1.  **Isolate Subject:** Perfectly identify and cut out the main product from its original background.
+2.  **Generate Scene:** Create a new, high-quality, photorealistic background scene as described by the user's request.
+3.  **Composite:** Place the isolated product into the generated scene. This is the most important step. You MUST apply realistic lighting, shadows, and perspective to the product so it looks completely natural in its new environment. The lighting on the product must match the lighting of the new scene.
+4.  **Final Output:** Your ONLY output must be the final, composited image. Do not show the isolated product or the background alone. Do not add any text.
+
+**USER SCENE REQUEST:** "${prompt}"`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: { parts: [imagePart, { text: fullPrompt }] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+    });
+
+    return handleApiResponse(response, "product scene");
+};
+
 export const generateSocialPostTitle = async (imageFile: File): Promise<string[]> => {
     const imagePart = await fileToPart(imageFile);
     const textPart = {

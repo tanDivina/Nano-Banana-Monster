@@ -4,17 +4,22 @@
 */
 
 import React, { useState } from 'react';
-import { UploadIcon, RetouchIcon, PaletteIcon, SunIcon } from './icons';
+import { UploadIcon, RetouchIcon, PaletteIcon, SunIcon, StackIcon } from './icons';
 
 interface StartScreenProps {
   onFileSelect: (files: FileList | null) => void;
+  onBatchFileSelect: (files: FileList | null) => void;
 }
 
-const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect }) => {
+const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect, onBatchFileSelect }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onFileSelect(e.target.files);
+  };
+
+  const handleBatchFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onBatchFileSelect(e.target.files);
   };
 
   return (
@@ -25,7 +30,11 @@ const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect }) => {
       onDrop={(e) => {
         e.preventDefault();
         setIsDraggingOver(false);
-        onFileSelect(e.dataTransfer.files);
+        if (e.dataTransfer.files.length > 1) {
+          onBatchFileSelect(e.dataTransfer.files);
+        } else {
+          onFileSelect(e.dataTransfer.files);
+        }
       }}
     >
       <div className="flex flex-col items-center gap-6 animate-fade-in">
@@ -37,14 +46,20 @@ const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect }) => {
           Retouch photos, apply creative filters, or make professional adjustments using simple text prompts. No complex tools needed.
         </p>
 
-        <div className="mt-6 flex flex-col items-center gap-4">
-            <label htmlFor="image-upload-start" className="relative inline-flex items-center justify-center px-10 py-5 text-xl font-bold text-white bg-amber-600 rounded-full cursor-pointer group hover:bg-amber-500 transition-colors">
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <label htmlFor="image-upload-start" className="relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white bg-amber-600 rounded-full cursor-pointer group hover:bg-amber-500 transition-colors">
                 <UploadIcon className="w-6 h-6 mr-3 transition-transform duration-500 ease-in-out group-hover:rotate-[360deg] group-hover:scale-110" />
                 Upload an Image
             </label>
             <input id="image-upload-start" type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-            <p className="text-sm text-gray-500">or drag and drop a file</p>
+            
+            <label htmlFor="batch-upload-start" className="relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-gray-200 bg-white/10 rounded-full cursor-pointer group hover:bg-white/20 transition-colors">
+                <StackIcon className="w-6 h-6 mr-3 transition-transform duration-300 ease-in-out group-hover:scale-110" />
+                Batch Edit Photos
+            </label>
+            <input id="batch-upload-start" type="file" multiple className="hidden" accept="image/*" onChange={handleBatchFileChange} />
         </div>
+        <p className="text-sm text-gray-500 mt-2">or drag and drop file(s)</p>
 
         <div className="mt-16 w-full">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
