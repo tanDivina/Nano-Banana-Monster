@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { UploadIcon, RetouchIcon, PaletteIcon, SunIcon, StackIcon } from './icons';
+import BackgroundRemovalTool from './BackgroundRemovalTool';
 
 interface StartScreenProps {
   onFileSelect: (files: FileList | null) => void;
@@ -13,6 +14,7 @@ interface StartScreenProps {
 
 const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect, onBatchFileSelect }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [showBackgroundTool, setShowBackgroundTool] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onFileSelect(e.target.files);
@@ -38,7 +40,15 @@ const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect, onBatchFileSele
       }}
     >
       <div className="flex flex-col items-center gap-6 animate-fade-in">
-        <img src="/edited_image.png" alt="Nano Banana Monster mascot" className="w-56 h-auto drop-shadow-lg" />
+        <div className="relative group">
+          <img src="/edited_image.png" alt="Edited image" className="w-56 h-auto drop-shadow-lg" />
+          <button
+            onClick={() => setShowBackgroundTool(true)}
+            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white font-semibold rounded-lg"
+          >
+            Remove Background
+          </button>
+        </div>
         <h1 className="text-5xl font-extrabold tracking-tight text-gray-100 sm:text-6xl md:text-7xl">
           AI-Powered Photo Editing, <span className="text-amber-400">Simplified</span>.
         </h1>
@@ -88,6 +98,10 @@ const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect, onBatchFileSele
         </div>
 
       </div>
+      
+      {showBackgroundTool && (
+        <BackgroundRemovalTool onComplete={() => setShowBackgroundTool(false)} />
+      )}
     </div>
   );
 };
