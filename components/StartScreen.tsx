@@ -38,7 +38,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onFileSelect, onBatchFileSele
       }}
     >
       <div className="flex flex-col items-center gap-6 animate-fade-in">
-        <img src="https://storage.googleapis.com/gemini-nano-banana/monster-on-banana.png" alt="Nano Banana Monster mascot" className="w-56 h-auto drop-shadow-lg" />
+        <img src="/edited_image.png" alt="Nano Banana Monster mascot" className="w-56 h-auto drop-shadow-lg" />
         <h1 className="text-5xl font-extrabold tracking-tight text-gray-100 sm:text-6xl md:text-7xl">
           AI-Powered Photo Editing, <span className="text-amber-400">Simplified</span>.
         </h1>
