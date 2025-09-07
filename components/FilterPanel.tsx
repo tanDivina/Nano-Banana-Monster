@@ -9,9 +9,10 @@ interface FilterPanelProps {
   onApplyFilter: (prompt: string) => void;
   isLoading: boolean;
   credits: number;
+  isBatchMode?: boolean;
 }
 
-const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, credits }) => {
+const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, credits, isBatchMode }) => {
   const [selectedPresetPrompt, setSelectedPresetPrompt] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -80,7 +81,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, cre
             disabled={isLoading || !activePrompt.trim() || isOutOfCredits}
             title={isOutOfCredits ? "You are out of credits." : "Apply this filter"}
           >
-            Apply Filter (1 Credit)
+            {isBatchMode ? 'Apply Filter to Batch' : 'Apply Filter (1 Credit)'}
           </button>
         </div>
       )}

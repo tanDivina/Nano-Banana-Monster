@@ -9,9 +9,10 @@ interface ProductStudioPanelProps {
   onApplyScene: (prompt: string) => void;
   isLoading: boolean;
   credits: number;
+  isBatchMode?: boolean;
 }
 
-const ProductStudioPanel: React.FC<ProductStudioPanelProps> = ({ onApplyScene, isLoading, credits }) => {
+const ProductStudioPanel: React.FC<ProductStudioPanelProps> = ({ onApplyScene, isLoading, credits, isBatchMode }) => {
   const [selectedPresetPrompt, setSelectedPresetPrompt] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -79,7 +80,7 @@ const ProductStudioPanel: React.FC<ProductStudioPanelProps> = ({ onApplyScene, i
                 disabled={isLoading || !activePrompt.trim() || isOutOfCredits}
                 title={isOutOfCredits ? "You are out of credits." : "Generate this product scene"}
             >
-                Generate Scene (1 Credit)
+                {isBatchMode ? 'Generate Scene for Batch' : 'Generate Scene (1 Credit)'}
             </button>
         </div>
       )}
