@@ -25,6 +25,7 @@ import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropI
 import BatchEditor from './components/BatchEditor';
 import ColorizePanel from './components/ColorizePanel';
 import VoiceControl from './components/VoiceControl';
+import DynamicCursor from './components/DynamicCursor';
 
 // Helper to convert a data URL string to a File object
 const dataURLtoFile = (dataurl: string, filename: string): File => {
@@ -1170,6 +1171,7 @@ const App: React.FC = () => {
     
     return (
         <div className="w-full min-h-screen flex flex-col bg-gray-900 text-gray-100">
+            <DynamicCursor />
             <Header credits={credits} onRefillCredits={refillCredits} />
             <div className="flex flex-grow overflow-hidden">
                 {/* Left Toolbar */}

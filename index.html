@@ -23,13 +23,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=Lobster&family=Roboto+Slab:wght@700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://esm.sh/react-image-crop@^11.0.6/dist/ReactCrop.css" />
 <style>
-/* Custom banana cursor */
+/* Hide default cursor */
 * {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M8 28c-1 0-2-1-2-2 0-2 1-4 2-6 2-4 4-8 6-10 1-1 2-2 4-2s3 1 4 2c2 2 4 6 6 10 1 2 2 4 2 6 0 1-1 2-2 2-8 0-12-2-20 0z" fill="%23FFD700" stroke="%23FFA500" stroke-width="1"/><path d="M18 8c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2z" fill="%23228B22"/></svg>') 16 16, auto !important;
-}
-
-button:hover, a:hover, input:hover, textarea:hover {
-    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M8 28c-1 0-2-1-2-2 0-2 1-4 2-6 2-4 4-8 6-10 1-1 2-2 4-2s3 1 4 2c2 2 4 6 6 10 1 2 2 4 2 6 0 1-1 2-2 2-8 0-12-2-20 0z" fill="%23FFD700" stroke="%23FFA500" stroke-width="1"/><path d="M18 8c0-1 1-2 2-2s2 1 2 2-1 2-2 2-2-1-2-2z" fill="%23228B22"/><circle cx="26" cy="6" r="2" fill="%23FF6B6B"/></svg>') 16 16, pointer !important;
+    cursor: none !important;
 }
 
 body {
@@ -191,38 +187,6 @@ body {
 }
 .animate-scale-in {
     animation: scale-in 0.2s ease-out forwards;
-}
-
-/* Custom yellow scrollbar */
-::-webkit-scrollbar {
-    width: 12px;
-}
-
-::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 6px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
-    border-radius: 6px;
-    border: 2px solid rgba(0, 0, 0, 0.3);
-    box-shadow: 0 2px 4px rgba(255, 215, 0, 0.3);
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #FFED4E 0%, #FF8C00 100%);
-    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.5);
-}
-
-::-webkit-scrollbar-thumb:active {
-    background: linear-gradient(180deg, #FFC700 0%, #FF7F00 100%);
-}
-
-/* Firefox scrollbar */
-* {
-    scrollbar-width: thin;
-    scrollbar-color: #FFD700 rgba(0, 0, 0, 0.3);
 }
 
 /* Robust fix for react-image-crop layout */
