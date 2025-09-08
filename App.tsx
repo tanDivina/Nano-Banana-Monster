@@ -188,7 +188,6 @@ const App: React.FC = () => {
                 const savedSession = await loadSession();
                 if (savedSession && savedSession.history.length > 0) {
                      // Ensure files are actual File objects, as IndexedDB can sometimes return plain objects
-                    // FIX: Add `any` type to `f` to prevent TypeScript from inferring it as `never` in the else branch.
                     const reconstructedHistory = savedSession.history.map((f: any) => {
                         if (f instanceof File) return f;
                         // Reconstruct if it's not a File instance
@@ -197,6 +196,7 @@ const App: React.FC = () => {
                     setHistory(reconstructedHistory);
                     setHistoryIndex(savedSession.historyIndex);
                     setCredits(savedSession.credits ?? INITIAL_CREDITS);
+                    setActiveTool('retouch'); // Set default tool when session is restored
                     setEditMode('single');
                 }
             } catch (err) {
@@ -327,15 +327,6 @@ const App: React.FC = () => {
        if (e.target) e.target.value = '';
    };
 
-    const handleSingleUploadClick = () => {
-        const input = document.getElementById('placeholder-upload-single') as HTMLInputElement;
-        if (input) input.click();
-    };
-
-    const handleBatchUploadClick = () => {
-        const input = document.getElementById('placeholder-upload-batch') as HTMLInputElement;
-        if (input) input.click();
-    };
 
     const handleUndo = useCallback(() => {
         if (historyIndex > 0) {
@@ -1099,21 +1090,23 @@ const App: React.FC = () => {
         };
     }, [handleMouseMove, handleMouseUp]);
 
-
     if (isRestoring) {
-        return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>;
+        return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>
     }
     
     if (editMode === 'batch') {
         return (
-            <BatchEditor 
-                files={batchFiles} 
-                onExit={() => { setEditMode('single'); setBatchFiles([]); }}
-                credits={credits}
-                onRefillCredits={refillCredits}
-                onDeductCredits={deductCredits}
-                parseErrorMessage={parseErrorMessage}
-            />
+            <>
+                <DynamicCursor />
+                <BatchEditor 
+                    files={batchFiles} 
+                    onExit={() => { setEditMode('single'); setBatchFiles([]); }}
+                    credits={credits}
+                    onRefillCredits={refillCredits}
+                    onDeductCredits={deductCredits}
+                    parseErrorMessage={parseErrorMessage}
+                />
+            </>
         );
     }
     
@@ -1125,10 +1118,10 @@ const App: React.FC = () => {
                 {/* Left Toolbar */}
                 <aside className="w-80 bg-gray-900/50 border-r border-gray-700 p-4 flex flex-col gap-4 overflow-y-auto min-h-0">
                     <div className="grid grid-cols-2 gap-2">
-                        <button onClick={handleUndo} disabled={historyIndex <= 0 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={handleUndo} disabled={historyIndex <= 0 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                             <UndoIcon className="w-5 h-5"/> Undo
                         </button>
-                        <button onClick={handleRedo} disabled={historyIndex >= history.length - 1 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <button onClick={handleRedo} disabled={historyIndex >= history.length - 1 || isLoading} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
                             <RedoIcon className="w-5 h-5"/> Redo
                         </button>
                     </div>
@@ -1145,7 +1138,7 @@ const App: React.FC = () => {
                                     disabled={isLoading || !currentImage || isComingSoon}
                                     className={`w-full flex items-center gap-3 text-left p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
                                         activeTool === tool.name ? 'bg-amber-500/20 text-amber-300' : 'text-gray-300 hover:bg-white/10'
-                                    } ${isComingSoon ? 'cursor-not-allowed' : ''}`}
+                                    } ${isComingSoon ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                 >
                                     <tool.icon className="w-6 h-6"/>
                                     <span>{tool.label}</span>
@@ -1173,7 +1166,7 @@ const App: React.FC = () => {
                             <button 
                                 onClick={handleCompareToggle} 
                                 disabled={historyIndex <= 0 || isLoading} 
-                                className={`flex-1 flex items-center justify-center gap-2 font-semibold py-2.5 px-4 rounded-md transition-all duration-300 ease-in-out active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                className={`flex-1 flex items-center justify-center gap-2 font-semibold py-2.5 px-4 rounded-md transition-all duration-300 ease-in-out active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
                                     isComparing 
                                     ? 'bg-gradient-to-br from-amber-600 to-amber-500 text-white shadow-md shadow-amber-500/20' 
                                     : 'bg-white/10 text-gray-200 hover:bg-white/20'
@@ -1181,11 +1174,11 @@ const App: React.FC = () => {
                             >
                                 <CompareIcon className="w-5 h-5"/> Compare
                             </button>
-                            <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex h-full items-center justify-center w-14 bg-white/10 text-gray-200 font-semibold p-2.5 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" title="Hold to see original">
+                            <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex h-full items-center justify-center w-14 bg-white/10 text-gray-200 font-semibold p-2.5 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer" title="Hold to see original">
                                 <EyeIcon className="w-6 h-6"/>
                             </button>
                         </div>
-                        <button onClick={() => setIsDownloadModalOpen(true)} disabled={!currentImage} className="w-full flex items-center justify-center gap-3 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/30 active:scale-95 disabled:opacity-50 disabled:from-gray-600 disabled:to-gray-500 disabled:shadow-none">
+                        <button onClick={() => setIsDownloadModalOpen(true)} disabled={!currentImage} className="w-full flex items-center justify-center gap-3 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/30 active:scale-95 disabled:opacity-50 disabled:from-gray-600 disabled:to-gray-500 disabled:shadow-none cursor-pointer">
                             <DownloadIcon className="w-6 h-6"/> Download
                         </button>
                     </div>
@@ -1217,7 +1210,7 @@ const App: React.FC = () => {
                     {error && (
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-800/80 border border-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
                             <p>{error}</p>
-                            <button onClick={() => setError(null)} className="absolute top-1 right-2 text-2xl leading-none">&times;</button>
+                            <button onClick={() => setError(null)} className="absolute top-1 right-2 text-2xl leading-none cursor-pointer">&times;</button>
                         </div>
                     )}
                     
@@ -1282,9 +1275,8 @@ const App: React.FC = () => {
                                                     ref={imageRef}
                                                     src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
                                                     alt="Editable image"
-                                                    className="max-w-full max-h-full object-contain"
+                                                    className={`max-w-full max-h-full object-contain ${activeTool === 'retouch' ? 'cursor-none' : ''}`}
                                                     onClick={handleImageClick}
-                                                    style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
                                                     crossOrigin="anonymous"
                                                 />
                                                  {hotspot && activeTool === 'retouch' && (
@@ -1326,7 +1318,7 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         <div className={`text-center text-gray-400 flex flex-col items-center justify-center gap-6 p-8 rounded-2xl border-2 transition-all duration-300 ${isDraggingOver ? 'border-dashed border-amber-400' : 'border-transparent'}`}>
-                            <img src="https://storage.googleapis.com/gemini-nano-banana/monster-on-banana.png" alt="Nano Banana Monster Studio mascot" className="w-40 h-auto drop-shadow-lg" />
+                            <img src="https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExdGwxZzR5NzdqNTkycTRvZmJucmJ5M2Z0ZW9pbmQyOWpkaG0zM21qZiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/LwIyvaNcnzsD6/giphy.gif" alt="Pixel Banana mascot" className="w-40 h-auto drop-shadow-lg" />
                             <h2 className="text-3xl font-bold text-gray-200">AI Photo Editor</h2>
                             <p>Drag & drop an image, or use the buttons below to start.</p>
                             <div className="flex items-center gap-4 mt-4">
@@ -1346,17 +1338,39 @@ const App: React.FC = () => {
 
                 {/* Right Panel */}
                 <aside className="w-96 bg-gray-900/50 border-l border-gray-700 p-4 flex flex-col items-center justify-center">
-                    {!activeTool && <div className="text-gray-400 text-center">Select a tool from the left to begin editing.</div>}
+                    {!activeTool && currentImage && <div className="text-gray-400 text-center">Select a tool from the left to continue editing.</div>}
+                    {!currentImage && <div className="text-gray-400 text-center">Upload an image to begin.</div>}
                     {activeTool === 'retouch' && <RetouchPanel onApplyRetouch={handleApplyRetouch} isLoading={isLoading} radius={hotspotRadius} onRadiusChange={setHotspotRadius} isHotspotSet={!!hotspot} referenceImage={referenceImage} onReferenceImageChange={setReferenceImage} credits={credits} />}
                     {activeTool === 'erase' && <ErasePanel onApplyErase={handleApplyErase} isLoading={isLoading} isSelectionMade={!!(completedEraseSelection && completedEraseSelection.width > 0)} credits={credits}/>}
                     {activeTool === 'filter' && <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'colorize' && <ColorizePanel onApplyColorize={handleApplyColorize} onApplyRepair={handleApplyRepair} onApplyColorizeAndRepair={handleApplyColorizeAndRepair} isLoading={isLoading} activeRestoration={activeRestoration} credits={credits} />}
-                    {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropReady={!!(completedCrop && completedCrop.width > 0)} />}
-                    {activeTool === 'background' && <BackgroundPanel onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} onGenerateTransparentBg={handleGenerateTransparentBg} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'studio' && <ProductStudioPanel onApplyProductScene={handleApplyProductScene} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'social' && <SocialPanel onApplySocialPost={handleApplySocialPost} onSuggestTitles={handleSuggestSocialTitles} onSetAspect={handleSetAspect} isLoading={isLoading} isSuggestingTitles={isSuggestingTitles} socialText={socialText} onSocialTextChange={setSocialText} socialTitleSuggestions={socialTitleSuggestions} isCropReady={!!(completedCrop && completedCrop.width > 0)} socialFont={socialFont} onSocialFontChange={setSocialFont} socialColor={socialColor} onSocialColorChange={setSocialColor} socialShadow={socialShadow} onSocialShadowChange={setSocialShadow} socialFontSize={socialFontSize} onSocialFontSizeChange={setSocialFontSize} credits={credits} />}
+                    {activeTool === 'colorize' && <ColorizePanel onApplyColorize={handleApplyColorize} onApplyRepair={handleApplyRepair} onApplyColorizeAndRepair={handleApplyColorizeAndRepair} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />}
+                    {activeTool === 'background' && <BackgroundPanel onGenerateTransparentBackground={handleGenerateTransparentBg} onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits}/>}
+                    {activeTool === 'studio' && <ProductStudioPanel onApplyScene={handleApplyProductScene} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'social' && (
+                        <SocialPanel 
+                            onApplySocialPost={handleApplySocialPost} 
+                            onSetAspect={handleSetAspect} 
+                            socialText={socialText} 
+                            onSocialTextChange={setSocialText} 
+                            isLoading={isLoading} 
+                            isCropping={!!imageDimensions} 
+                            onSuggestTitles={handleSuggestSocialTitles} 
+                            isSuggestingTitles={isSuggestingTitles} 
+                            titleSuggestions={socialTitleSuggestions}
+                            socialFont={socialFont}
+                            onSocialFontChange={setSocialFont}
+                            socialColor={socialColor}
+                            onSocialColorChange={setSocialColor}
+                            socialShadow={socialShadow}
+                            onSocialShadowChange={setSocialShadow}
+                            socialFontSize={socialFontSize}
+                            onSocialFontSizeChange={setSocialFontSize}
+                            credits={credits}
+                        />
+                    )}
                 </aside>
             </div>
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
