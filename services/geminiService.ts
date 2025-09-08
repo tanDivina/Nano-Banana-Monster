@@ -8,6 +8,11 @@ import { GoogleGenAI, GenerateContentResponse, Modality, Part, Type } from "@goo
 // Initialize the Gemini client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
+export interface ParsedCommand {
+    tool: 'retouch' | 'erase' | 'filter' | 'adjust' | 'colorize' | 'crop' | 'background' | 'upscale' | 'studio' | 'social' | 'undo' | 'redo' | 'download' | 'unknown';
+    prompt: string;
+}
+
 // Helper function to convert a File object to a Gemini API Part
 const fileToPart = async (file: File): Promise<{ inlineData: { mimeType: string; data: string; } }> => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -137,15 +142,10 @@ The user wants to edit the image.
 
 export const generateFilteredImage = async (imageFile: File, prompt: string): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are a professional photo editing AI. Your task is to apply a filter or style to the provided image based on the user's request.
-**CRITICAL RULES:**
-1.  **NO ANNOTATIONS:** You MUST NOT add any text, borders, or other annotations.
-2.  **PRESERVE CONTENT:** Do not change the subject or content of the image. Only modify its style and aesthetic.
+    const fullPrompt = `You are a professional photo editing AI. Your task is to apply a filter or style to the provided image based on the user's request. **Your ONLY output must be the modified image.** Do not add text or any other elements unless explicitly asked.
 
-**User's Request:** "${prompt}"
-
-Return only the edited photograph.`;
-
+**USER REQUEST:** Apply the following style: "${prompt}"`;
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
         contents: { parts: [imagePart, { text: fullPrompt }] },
@@ -159,15 +159,10 @@ Return only the edited photograph.`;
 
 export const generateAdjustedImage = async (imageFile: File, prompt: string): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are a professional photo editing AI. Your task is to perform a photorealistic adjustment to the provided image based on the user's request.
-**CRITICAL RULES:**
-1.  **NO ANNOTATIONS:** You MUST NOT add any text, borders, or other annotations.
-2.  **SUBTLE CHANGES:** The adjustment should be subtle and photorealistic, enhancing the existing image rather than drastically changing it. Match the original lighting and perspective.
+    const fullPrompt = `You are a professional photo editing AI. Your task is to perform a photorealistic adjustment to the provided image based on the user's request. Examples include changing lighting, enhancing details, or blurring the background. **Your ONLY output must be the modified image.**
 
-**User's Adjustment Request:** "${prompt}"
-
-Return only the edited photograph.`;
-
+**USER REQUEST:** Perform the following adjustment: "${prompt}"`;
+    
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
         contents: { parts: [imagePart, { text: fullPrompt }] },
@@ -175,21 +170,53 @@ Return only the edited photograph.`;
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
     });
-
+    
     return handleApiResponse(response, "adjustment");
+};
+
+
+export const generateTransparentBackground = async (imageFile: File): Promise<string> => {
+    const imagePart = await fileToPart(imageFile);
+    const promptPart = { text: "Remove the background from this image, leaving only the main subject with a transparent background. The output must be a PNG with a transparent background." };
+    
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: { parts: [imagePart, promptPart] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+    });
+    
+    return handleApiResponse(response, "background removal");
+};
+
+
+export const generateUpscaledImage = async (imageFile: File): Promise<string> => {
+    const imagePart = await fileToPart(imageFile);
+    const promptPart = { text: "Upscale this image to twice its original resolution. Enhance details and sharpness photorealistically. The output must have the exact same content and aspect ratio, just higher resolution." };
+    
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image-preview',
+        contents: { parts: [imagePart, promptPart] },
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+    });
+
+    return handleApiResponse(response, "upscale");
 };
 
 export const generateProductScene = async (imageFile: File, prompt: string): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are a professional product photographer AI. The user has provided an image of a product, likely with a plain or transparent background. Your task is to place this product into a new, photorealistic scene based on the user's description.
-**CRITICAL RULES:**
-1.  **SEAMLESS INTEGRATION:** The product must be seamlessly integrated into the new scene. Pay close attention to lighting, shadows, reflections, and perspective to make it look completely natural.
-2.  **MAINTAIN PRODUCT INTEGRITY:** Do not alter the product itself. The product from the original image should be perfectly preserved.
-3.  **PHOTOREALISM:** The final image must be a high-quality, photorealistic photograph.
+    const fullPrompt = `You are an expert product photography AI. Your task is to take the user's image, identify and isolate the main product, and then place it into a new, photorealistic scene based on the user's prompt.
 
-**User's Scene Description:** "${prompt}"
+**CRITICAL INSTRUCTIONS:**
+1.  **Isolate Subject:** Perfectly identify and cut out the main product from its original background.
+2.  **Generate Scene:** Create a new, high-quality, photorealistic background scene as described by the user's request.
+3.  **Composite:** Place the isolated product into the generated scene. This is the most important step. You MUST apply realistic lighting, shadows, and perspective to the product so it looks completely natural in its new environment. The lighting on the product must match the lighting of the new scene.
+4.  **Final Output:** Your ONLY output must be the final, composited image. Do not show the isolated product or the background alone. Do not add any text.
 
-Return only the final composited photograph.`;
+**USER SCENE REQUEST:** "${prompt}"`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
@@ -204,13 +231,7 @@ Return only the final composited photograph.`;
 
 export const generateColorizedImage = async (imageFile: File): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are an expert in historical photo restoration. Your task is to colorize the provided black and white image.
-**CRITICAL RULES:**
-1.  **REALISTIC COLORS:** Apply historically accurate and realistic colors. Avoid oversaturation.
-2.  **PRESERVE DETAILS:** Maintain all original details and textures of the photograph.
-3.  **NO OTHER CHANGES:** Do not repair damage or make any other changes besides colorization.
-
-Return only the colorized photograph.`;
+    const fullPrompt = `You are an expert photo restoration AI. Your task is to colorize the provided black and white, sepia, or faded image. Analyze the image content (e.g., clothing, environment, time period) to apply historically accurate and photorealistic colors. Enhance the image's dynamic range and details as part of the restoration process. Your ONLY output must be the fully colorized, restored image.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
@@ -225,13 +246,7 @@ Return only the colorized photograph.`;
 
 export const generateRepairedImage = async (imageFile: File): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are an expert in photo restoration. Your task is to repair the damage in the provided photograph (e.g., scratches, tears, dust, fading).
-**CRITICAL RULES:**
-1.  **SEAMLESS REPAIR:** Inpaint the damaged areas seamlessly, matching the original texture, grain, and lighting.
-2.  **PRESERVE ORIGINAL:** Do not change the content or colors of the image. Only repair the damage.
-3.  **NATURAL RESULT:** The final image should look like a clean, undamaged version of the original.
-
-Return only the repaired photograph.`;
+    const fullPrompt = `You are an expert photo restoration AI. Your task is to repair the provided image. Remove scratches, dust, tears, and other physical damage. Enhance clarity and restore faded details, but preserve the original colors (e.g., if it's black and white, keep it black and white). Your ONLY output must be the fully repaired image.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
@@ -246,13 +261,7 @@ Return only the repaired photograph.`;
 
 export const generateColorizedAndRepairedImage = async (imageFile: File): Promise<string> => {
     const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are an expert in historical photo restoration. Your task is to both repair damage (scratches, tears, etc.) and colorize the provided photograph.
-**CRITICAL RULES:**
-1.  **SEAMLESS REPAIR:** First, inpaint any damaged areas seamlessly.
-2.  **REALISTIC COLORIZATION:** Then, apply historically accurate and realistic colors to the repaired image.
-3.  **NATURAL RESULT:** The final image should look like a clean, undamaged, color photograph.
-
-Return only the fully restored photograph.`;
+    const fullPrompt = `You are an expert photo restoration AI. Your task is to fully restore the provided old, damaged, or faded photo. This involves two steps: first, repair all physical damage such as scratches, dust, and tears. Second, colorize the image with historically accurate and photorealistic colors. Enhance the image's dynamic range and details as part of the restoration process. Your ONLY output must be the fully repaired and colorized image.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image-preview',
@@ -265,84 +274,95 @@ Return only the fully restored photograph.`;
     return handleApiResponse(response, "colorize and repair");
 };
 
-export const generateTransparentBackground = async (imageFile: File): Promise<string> => {
-    const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are an expert photo editor. Your task is to remove the background from the provided image.
-**CRITICAL RULES:**
-1.  **PRECISE MASKING:** Create a clean, precise cutout of the main subject.
-2.  **TRANSPARENT BACKGROUND:** The background MUST be fully transparent.
-3.  **NO ADDITIONS:** Do not add any shadows, borders, or other effects.
-
-Return only the image of the subject on a transparent background.`;
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
-        contents: { parts: [imagePart, { text: fullPrompt }] },
-        config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
-        },
-    });
-
-    return handleApiResponse(response, "transparent background");
-};
-
-export const generateUpscaledImage = async (imageFile: File): Promise<string> => {
-    const imagePart = await fileToPart(imageFile);
-    const fullPrompt = `You are an AI image enhancement expert. Your task is to upscale the provided image, increasing its resolution and enhancing details.
-**CRITICAL RULES:**
-1.  **ENHANCE DETAILS:** Sharpen details and textures in a natural, photorealistic way. Do not over-sharpen.
-2.  **INCREASE RESOLUTION:** Double the resolution of the image if possible.
-3.  **NO ARTIFACTS:** Avoid introducing any AI-generated artifacts or distortion.
-
-Return only the upscaled and enhanced photograph.`;
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image-preview',
-        contents: { parts: [imagePart, { text: fullPrompt }] },
-        config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
-        },
-    });
-
-    return handleApiResponse(response, "upscale");
-};
-
 export const generateSocialPostTitle = async (imageFile: File): Promise<string[]> => {
     const imagePart = await fileToPart(imageFile);
-    const prompt = `Analyze the provided image and generate 5 short, catchy, and engaging titles suitable for a social media post (like Instagram or Twitter). The titles should be relevant to the image content. The titles should be less than 10 words each.`;
+    const textPart = {
+        text: `Analyze this image and suggest 5 catchy, short titles suitable for a YouTube thumbnail or Pinterest pin. The titles should be engaging and relevant to the image content. Keep them concise.`
+    };
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: { parts: [imagePart, { text: prompt }] },
+        contents: { parts: [textPart, imagePart] },
         config: {
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                    titles: {
+                    suggestions: {
                         type: Type.ARRAY,
                         items: {
-                            type: Type.STRING,
-                            description: 'A catchy social media title.'
+                            type: Type.STRING
                         }
                     }
                 },
-                required: ['titles']
-            },
-        },
-    });
-    
-    if (response.text) {
-        try {
-            const json = JSON.parse(response.text);
-            if (json.titles && Array.isArray(json.titles)) {
-                return json.titles.slice(0, 5);
+                required: ["suggestions"]
             }
-        } catch (e) {
-            console.error("Failed to parse social title suggestions:", e);
-            throw new Error("Could not generate social post titles. The model returned invalid JSON.");
         }
+    });
+
+    try {
+        const jsonText = response.text.trim();
+        const result = JSON.parse(jsonText);
+        if (result && Array.isArray(result.suggestions)) {
+            return result.suggestions.slice(0, 5); // Ensure we only return 5
+        }
+        console.warn("AI returned valid JSON but 'suggestions' array is missing.", result);
+        return [];
+    } catch (e) {
+        console.error("Failed to parse social title suggestions:", e, "Raw text:", response.text);
+        throw new Error("The AI returned an unexpected format for title suggestions.");
     }
-    
-    throw new Error("Could not generate social post titles. The model did not return any suggestions.");
+};
+
+export const interpretVoiceCommand = async (transcribedText: string): Promise<ParsedCommand> => {
+    const systemInstruction = `You are a voice command interpreter for a photo editing application. Your task is to analyze the user's transcribed speech and convert it into a structured JSON command. The application has the following tools: 'retouch', 'erase', 'filter', 'adjust', 'colorize', 'background', 'upscale', 'studio', 'social'. It can also perform 'undo', 'redo', and 'download' actions.
+- For tool-based commands, identify the target tool and extract the user's creative instruction as the 'prompt'.
+- For simple actions, identify the action as the 'tool' and the prompt can be empty.
+- If the user says something like 'make it black and white', the tool is 'filter' and the prompt is 'Apply a high-contrast black and white filter'.
+- If the user says 'remove the person in the red shirt', the tool is 'erase' and the prompt is 'the person in the red shirt'.
+- If the user says 'undo that', the tool is 'undo'.
+- If the user says 'download this image', the tool is 'download'.
+- If the command is unclear, set the tool to 'unknown'.
+- Be concise. Do not add conversational text to the prompt. Just extract the core instruction. For 'colorize', the specific command could be to just 'colorize', 'repair', or 'both'. If the user says "fix this photo", it is probably 'repair'. If they say "colorize and repair", it is 'both'.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ parts: [{ text: transcribedText }] }],
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        tool: {
+                            type: Type.STRING,
+                            description: "The tool or action to use. Must be one of: retouch, erase, filter, adjust, colorize, background, upscale, studio, social, undo, redo, download, unknown.",
+                        },
+                        prompt: {
+                            type: Type.STRING,
+                            description: "The user's specific instruction for the tool. For 'colorize', this can be 'colorize', 'repair', or 'both'. Can be empty for simple actions."
+                        }
+                    },
+                    required: ["tool", "prompt"]
+                }
+            }
+        });
+
+        const jsonText = response.text.trim();
+        const parsedResult = JSON.parse(jsonText) as ParsedCommand;
+        
+        // Basic validation
+        const validTools = ['retouch', 'erase', 'filter', 'adjust', 'colorize', 'background', 'upscale', 'studio', 'social', 'undo', 'redo', 'download', 'unknown'];
+        if (validTools.includes(parsedResult.tool)) {
+            return parsedResult;
+        } else {
+            console.warn("Gemini returned an invalid tool:", parsedResult.tool);
+            return { tool: 'unknown', prompt: transcribedText };
+        }
+    } catch (e) {
+        console.error("Failed to interpret voice command:", e);
+        // Fallback
+        return { tool: 'unknown', prompt: transcribedText };
+    }
 };

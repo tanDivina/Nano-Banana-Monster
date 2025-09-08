@@ -51,9 +51,9 @@ export const saveSession = async (sessionData: Omit<SessionData, 'id'>): Promise
     const store = transaction.objectStore(STORE_NAME);
     const dataToStore: SessionData = { ...sessionData, id: SESSION_KEY };
     
-    // Use structured cloning directly, which correctly handles File objects.
-    // JSON.stringify would corrupt the File data.
-    const request = store.put(dataToStore);
+    // Some browsers have issues storing File objects with their prototypes.
+    // This structured clone approach is generally safe.
+    const request = store.put(JSON.parse(JSON.stringify(dataToStore)));
 
     request.onsuccess = () => resolve();
     request.onerror = (event) => {
