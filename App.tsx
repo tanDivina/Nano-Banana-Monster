@@ -1369,6 +1369,24 @@ const App: React.FC = () => {
                             credits={credits}
                         />
                     )}
+                
+                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-8">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-3 bg-gradient-to-r from-amber-600 to-orange-500 text-white font-bold py-4 px-8 rounded-xl transition-all duration-300 ease-in-out shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-1 active:scale-95 text-lg min-w-[180px]"
+                  >
+                    <UploadIcon className="w-6 h-6" />
+                    Upload Image
+                  </button>
+                  
+                  <button
+                    onClick={() => batchFileInputRef.current?.click()}
+                    className="flex items-center gap-3 bg-gray-700 text-white font-bold py-4 px-8 rounded-xl transition-all duration-300 ease-in-out shadow-lg hover:bg-gray-600 hover:shadow-xl hover:-translate-y-1 active:scale-95 text-lg min-w-[180px]"
+                  >
+                    <StackIcon className="w-6 h-6" />
+                    Upload Batch
+                  </button>
+                </div>
                 </aside>
             </div>
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
