@@ -1342,34 +1342,21 @@ const App: React.FC = () => {
                     {activeTool === 'erase' && <ErasePanel onApplyErase={handleApplyErase} isLoading={isLoading} isSelectionMade={!!(completedEraseSelection && completedEraseSelection.width > 0)} credits={credits}/>}
                     {activeTool === 'filter' && <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'colorize' && <ColorizePanel onApplyColorize={handleApplyColorize} onApplyRepair={handleApplyRepair} onApplyColorizeAndRepair={handleApplyColorizeAndRepair} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />}
-                    {activeTool === 'background' && <BackgroundPanel onGenerateTransparentBackground={handleGenerateTransparentBg} onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits}/>}
-                    {activeTool === 'studio' && <ProductStudioPanel onApplyScene={handleApplyProductScene} isLoading={isLoading} credits={credits} />}
-                    {activeTool === 'social' && (
-                        <SocialPanel 
-                            onApplySocialPost={handleApplySocialPost} 
-                            onSetAspect={handleSetAspect} 
-                            socialText={socialText} 
-                            onSocialTextChange={setSocialText} 
-                            isLoading={isLoading} 
-                            isCropping={!!imageDimensions} 
-                            onSuggestTitles={handleSuggestSocialTitles} 
-                            isSuggestingTitles={isSuggestingTitles} 
-                            titleSuggestions={socialTitleSuggestions}
-                            socialFont={socialFont}
-                            onSocialFontChange={setSocialFont}
-                            socialColor={socialColor}
-                            onSocialColorChange={setSocialColor}
-                            socialShadow={socialShadow}
-                            onSocialShadowChange={setSocialShadow}
-                            socialFontSize={socialFontSize}
-                            onSocialFontSizeChange={setSocialFontSize}
-                            credits={credits}
-                        />
-                    )}
-                </aside>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={handleSingleUploadClick}
+                className="flex items-center justify-center gap-3 bg-gradient-to-r from-amber-600 to-amber-500 text-white font-bold py-4 px-8 rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-px active:scale-95 text-lg"
+              >
+                <UploadIcon className="w-6 h-6" />
+                Upload Image
+              </button>
+              <button
+                onClick={handleBatchUploadClick}
+                className="flex items-center justify-center gap-3 bg-gray-700 hover:bg-gray-600 text-white font-bold py-4 px-8 rounded-lg transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl hover:-translate-y-px active:scale-95 text-lg"
+              >
+                <StackIcon className="w-6 h-6" />
+                Upload Batch
+              </button>
             </div>
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
         </div>
