@@ -7,7 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import { ReactCompareSlider } from 'react-compare-slider';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle, generateProductScene } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle, generateProductScene, generateColorizedImage, generateRepairedImage, generateColorizedAndRepairedImage, type ParsedCommand } from './services/geminiService';
 import { saveSession, loadSession, clearSession } from './services/dbService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
@@ -21,9 +21,10 @@ import RetouchPanel from './components/RetouchPanel';
 import SocialPanel from './components/SocialPanel';
 import ErasePanel from './components/ErasePanel';
 import ProductStudioPanel from './components/ProductStudioPanel';
-import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon, StudioIcon } from './components/icons';
-import StartScreen from './components/StartScreen';
+import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon, StudioIcon, ColorizeIcon, StackIcon } from './components/icons';
 import BatchEditor from './components/BatchEditor';
+import ColorizePanel from './components/ColorizePanel';
+import VoiceControl from './components/VoiceControl';
 
 // Helper to convert a data URL string to a File object
 const dataURLtoFile = (dataurl: string, filename: string): File => {
@@ -77,18 +78,20 @@ function centerAspectCrop(
     };
 }
 
-type Tool = 'retouch' | 'erase' | 'filter' | 'adjust' | 'crop' | 'background' | 'upscale' | 'social' | 'studio' | null;
+type Tool = 'retouch' | 'erase' | 'filter' | 'adjust' | 'colorize' | 'crop' | 'background' | 'upscale' | 'social' | 'studio' | null;
+type RestorationOperation = 'colorize' | 'repair' | 'colorize_repair' | null;
 
 const tools = [
   { name: 'retouch', label: 'Retouch', icon: RetouchIcon },
   { name: 'erase', label: 'Erase', icon: EraseIcon },
   { name: 'filter', label: 'Filter', icon: PaletteIcon },
   { name: 'adjust', label: 'Adjust', icon: SunIcon },
-  { name: 'crop', label: 'Crop', icon: CropIcon },
+  { name: 'colorize', label: 'Revive', icon: ColorizeIcon },
+  { name: 'crop', label: 'Crop', icon: CropIcon, comingSoon: true },
   { name: 'background', label: 'Background', icon: BackgroundIcon },
   { name: 'upscale', label: 'Upscale', icon: UpscaleIcon },
-  { name: 'studio', label: 'Studio', icon: StudioIcon },
-  { name: 'social', label: 'Social Post', icon: HeartIcon },
+  { name: 'studio', label: 'Product Studio', icon: StudioIcon },
+  { name: 'social', label: 'Social Post', icon: HeartIcon, comingSoon: true },
 ] as const;
 
 const SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -109,6 +112,8 @@ const App: React.FC = () => {
     const [referenceImage, setReferenceImage] = useState<File | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
     const [credits, setCredits] = useState(INITIAL_CREDITS);
+    const [activeRestoration, setActiveRestoration] = useState<RestorationOperation>(null);
+    const [isDraggingOver, setIsDraggingOver] = useState(false);
     
     // Crop & Social state
     const [crop, setCrop] = useState<Crop>();
@@ -131,12 +136,25 @@ const App: React.FC = () => {
 
     // Download modal state
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+
+    // Voice control state
+    const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
     
     const imageRef = useRef<HTMLImageElement>(null);
     const newUploadInputRef = useRef<HTMLInputElement>(null);
     const imageContainerRef = useRef<HTMLElement>(null);
     const textOverlayRef = useRef<HTMLDivElement>(null);
     const dragStartRef = useRef<{ mouseX: number, mouseY: number, textX: number, textY: number } | null>(null);
+    
+    // Style for comparison slider items to ensure consistent dimensions
+    const compareWrapperStyle: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+    };
     
     const originalImage = history[0];
     const currentImage = history[historyIndex];
@@ -307,11 +325,9 @@ const App: React.FC = () => {
     };
     
     const handleNewUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-           resetAndLoadImage(e.target.files[0]);
-           // Reset file input value to allow re-uploading the same file
-           if (e.target) e.target.value = '';
-        }
+        handleFileSelect(e.target.files);
+       // Reset file input value to allow re-uploading the same file
+       if (e.target) e.target.value = '';
    };
 
 
@@ -397,7 +413,7 @@ const App: React.FC = () => {
         setIsLoading(true);
         try {
             deductCredit();
-            const resultDataUrl = await generateEditedImage(currentImage, prompt, hotspot, hotspotRadius, referenceImage);
+            const resultDataUrl = await generateEditedImage(currentImage, prompt, hotspot, hotspotRadius, referenceImage, undefined, imageDimensions);
             const newFile = dataURLtoFile(resultDataUrl, `edited_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
@@ -431,7 +447,7 @@ const App: React.FC = () => {
                 ? `Photorealistically remove "${promptText}" from the image. Intelligently fill the resulting space, blending it seamlessly with the surroundings to make it look as if the object was never there.`
                 : `Photorealistically remove the most prominent object within the selected area. Intelligently fill the resulting space, blending it seamlessly with the surroundings to make it look as if the object was never there. This is an inpainting task.`;
             
-            const resultDataUrl = await generateEditedImage(currentImage, eraseInstruction, null, 0, null, completedEraseSelection);
+            const resultDataUrl = await generateEditedImage(currentImage, eraseInstruction, null, 0, null, completedEraseSelection, imageDimensions);
             const newFile = dataURLtoFile(resultDataUrl, `erased_${Date.now()}.png`);
             updateHistory(newFile);
         } catch (err: any) {
@@ -506,6 +522,78 @@ const App: React.FC = () => {
             setError(parseErrorMessage(err));
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleApplyColorize = async () => {
+        if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsLoading(true);
+        setActiveRestoration('colorize');
+        try {
+            deductCredit();
+            const resultDataUrl = await generateColorizedImage(currentImage);
+            const newFile = dataURLtoFile(resultDataUrl, `colorized_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+            setActiveRestoration(null);
+        }
+    };
+
+    const handleApplyRepair = async () => {
+        if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsLoading(true);
+        setActiveRestoration('repair');
+        try {
+            deductCredit();
+            const resultDataUrl = await generateRepairedImage(currentImage);
+            const newFile = dataURLtoFile(resultDataUrl, `repaired_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+            setActiveRestoration(null);
+        }
+    };
+
+    const handleApplyColorizeAndRepair = async () => {
+        if (!currentImage) return;
+        
+        if (credits <= 0) {
+            setError("You are out of credits. Click 'Get More' in the header to refill.");
+            return;
+        }
+
+        setError(null);
+        setIsLoading(true);
+        setActiveRestoration('colorize_repair');
+        try {
+            deductCredit();
+            const resultDataUrl = await generateColorizedAndRepairedImage(currentImage);
+            const newFile = dataURLtoFile(resultDataUrl, `restored_${Date.now()}.png`);
+            updateHistory(newFile);
+        } catch (err: any) {
+            setError(parseErrorMessage(err));
+        } finally {
+            setIsLoading(false);
+            setActiveRestoration(null);
         }
     };
 
@@ -1005,6 +1093,63 @@ const App: React.FC = () => {
         };
     }, [handleMouseMove, handleMouseUp]);
 
+    const handleVoiceCommand = async (command: ParsedCommand) => {
+        if (!currentImage && !['undo', 'redo'].includes(command.tool)) {
+            setVoiceStatus("Please upload an image first.");
+            setTimeout(() => setVoiceStatus(null), 4000);
+            return;
+        }
+        
+        setVoiceStatus(`Executing: ${command.tool} - ${command.prompt || '...'}`);
+        
+        // De-activate current tool to avoid confusion
+        setActiveTool(null);
+    
+        switch (command.tool) {
+            case 'filter':
+                await handleApplyFilter(command.prompt);
+                break;
+            case 'adjust':
+                await handleApplyAdjustment(command.prompt);
+                break;
+            case 'retouch':
+                await handleApplyRetouch(command.prompt);
+                break;
+            case 'erase':
+                await handleApplyErase(command.prompt);
+                break;
+            case 'studio':
+                await handleApplyProductScene(command.prompt);
+                break;
+            case 'upscale':
+                await handleUpscaleImage();
+                break;
+            case 'background':
+                await handleGenerateTransparentBg();
+                break;
+            case 'colorize':
+                if (command.prompt === 'repair') await handleApplyRepair();
+                else if (command.prompt === 'both') await handleApplyColorizeAndRepair();
+                else await handleApplyColorize();
+                break;
+            case 'undo':
+                handleUndo();
+                break;
+            case 'redo':
+                handleRedo();
+                break;
+            case 'download':
+                setIsDownloadModalOpen(true);
+                break;
+            case 'unknown':
+            default:
+                setVoiceStatus(`Sorry, I didn't understand the command: "${command.prompt}"`);
+                break;
+        }
+        // Clear status after a bit
+        setTimeout(() => setVoiceStatus(null), 4000);
+    };
+
 
     if (isRestoring) {
         return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>
@@ -1020,14 +1165,6 @@ const App: React.FC = () => {
                 onDeductCredits={deductCredits}
                 parseErrorMessage={parseErrorMessage}
             />
-        );
-    }
-
-    if (!originalImage) {
-        return (
-            <div className="w-full min-h-screen flex items-center justify-center">
-                <StartScreen onFileSelect={handleFileSelect} onBatchFileSelect={handleBatchFileSelect} />
-            </div>
         );
     }
     
@@ -1049,19 +1186,27 @@ const App: React.FC = () => {
                     <div className="w-full border-t border-gray-700 my-2"></div>
 
                     <nav className="flex flex-col gap-2">
-                        {tools.map(tool => (
-                            <button
-                                key={tool.name}
-                                onClick={() => handleToolSelect(tool.name)}
-                                disabled={isLoading}
-                                className={`w-full flex items-center gap-3 text-left p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
-                                    activeTool === tool.name ? 'bg-amber-500/20 text-amber-300' : 'text-gray-300 hover:bg-white/10'
-                                }`}
-                            >
-                                <tool.icon className="w-6 h-6"/>
-                                {tool.label}
-                            </button>
-                        ))}
+                        {tools.map(tool => {
+                            const isComingSoon = 'comingSoon' in tool && (tool as { comingSoon?: boolean }).comingSoon;
+                            return (
+                                <button
+                                    key={tool.name}
+                                    onClick={() => !isComingSoon && handleToolSelect(tool.name)}
+                                    disabled={isLoading || !currentImage || isComingSoon}
+                                    className={`w-full flex items-center gap-3 text-left p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
+                                        activeTool === tool.name ? 'bg-amber-500/20 text-amber-300' : 'text-gray-300 hover:bg-white/10'
+                                    } ${isComingSoon ? 'cursor-not-allowed' : ''}`}
+                                >
+                                    <tool.icon className="w-6 h-6"/>
+                                    <span>{tool.label}</span>
+                                    {isComingSoon && (
+                                        <span className="ml-auto text-xs font-semibold text-gray-500 bg-gray-700/50 px-2 py-1 rounded-full">
+                                            Coming Soon
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </nav>
 
                     <div className="w-full border-t border-gray-700 my-2"></div>
@@ -1075,14 +1220,22 @@ const App: React.FC = () => {
                     
                     <div className="mt-auto flex flex-col gap-2 pt-8">
                          <div className="flex items-center gap-2">
-                            <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" title="Hold to see original">
-                                <EyeIcon className="w-5 h-5"/> Original
+                            <button 
+                                onClick={handleCompareToggle} 
+                                disabled={historyIndex <= 0 || isLoading} 
+                                className={`flex-1 flex items-center justify-center gap-2 font-semibold py-2.5 px-4 rounded-md transition-all duration-300 ease-in-out active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    isComparing 
+                                    ? 'bg-gradient-to-br from-amber-600 to-amber-500 text-white shadow-md shadow-amber-500/20' 
+                                    : 'bg-white/10 text-gray-200 hover:bg-white/20'
+                                }`}
+                            >
+                                <CompareIcon className="w-5 h-5"/> Compare
                             </button>
-                            <button onClick={handleCompareToggle} disabled={historyIndex <= 0 || isLoading} className={`relative flex items-center justify-center gap-2 w-14 h-full bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isComparing ? 'text-amber-400' : ''}`}>
-                                <CompareIcon className="w-6 h-6"/>
+                            <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex h-full items-center justify-center w-14 bg-white/10 text-gray-200 font-semibold p-2.5 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" title="Hold to see original">
+                                <EyeIcon className="w-6 h-6"/>
                             </button>
                         </div>
-                        <button onClick={() => setIsDownloadModalOpen(true)} className="w-full flex items-center justify-center gap-3 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/30 active:scale-95">
+                        <button onClick={() => setIsDownloadModalOpen(true)} disabled={!currentImage} className="w-full flex items-center justify-center gap-3 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-3 px-4 rounded-lg transition-all hover:shadow-lg hover:shadow-amber-500/30 active:scale-95 disabled:opacity-50 disabled:from-gray-600 disabled:to-gray-500 disabled:shadow-none">
                             <DownloadIcon className="w-6 h-6"/> Download
                         </button>
                     </div>
@@ -1090,7 +1243,26 @@ const App: React.FC = () => {
                 </aside>
 
                 {/* Main Content */}
-                <main ref={imageContainerRef} className="relative flex-grow flex items-center justify-center overflow-hidden p-4 md:p-8">
+                <main 
+                    ref={imageContainerRef} 
+                    className={`relative flex-grow flex items-center justify-center overflow-hidden p-4 md:p-8 transition-colors duration-300 ${isDraggingOver && !currentImageUrl ? 'bg-amber-500/10' : ''}`}
+                    onDragOver={(e) => { 
+                        e.preventDefault();
+                        if (!currentImageUrl) setIsDraggingOver(true);
+                    }}
+                    onDragLeave={() => setIsDraggingOver(false)}
+                    onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDraggingOver(false);
+                        if (currentImageUrl) return;
+                        
+                        if (e.dataTransfer.files.length > 1) {
+                            handleBatchFileSelect(e.dataTransfer.files);
+                        } else {
+                            handleFileSelect(e.dataTransfer.files);
+                        }
+                    }}
+                >
                     {/* Error Display */}
                     {error && (
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-800/80 border border-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
@@ -1098,8 +1270,14 @@ const App: React.FC = () => {
                             <button onClick={() => setError(null)} className="absolute top-1 right-2 text-2xl leading-none">&times;</button>
                         </div>
                     )}
+                     {/* Voice Status Toast */}
+                     {voiceStatus && (
+                        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-gray-800/80 border border-gray-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
+                            <p>{voiceStatus}</p>
+                        </div>
+                    )}
                     
-                    {currentImageUrl && (
+                    {currentImageUrl ? (
                         <div className="relative max-w-full max-h-full flex items-center justify-center">
                             {isLoading && (
                                 <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center z-20 gap-4 backdrop-blur-sm">
@@ -1109,88 +1287,115 @@ const App: React.FC = () => {
                             )}
 
                             {!isLoading && (
-                                <>
-                                    {isComparing && originalImageUrl ? (
-                                        <ReactCompareSlider
-                                            className="max-w-full max-h-full"
-                                            itemOne={<img src={originalImageUrl} alt="Original" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
-                                            itemTwo={<img src={currentImageUrl} alt="Current" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
-                                        />
-                                    ) : (activeTool === 'crop' || activeTool === 'social' || activeTool === 'erase') ? (
-                                        <ReactCrop
-                                            crop={activeTool === 'erase' ? eraseSelection : crop}
-                                            onChange={(_, percentCrop) => {
-                                                if (activeTool === 'erase') {
-                                                    setEraseSelection(percentCrop);
-                                                } else {
-                                                    setCrop(percentCrop);
-                                                }
-                                            }}
-                                            onComplete={(c) => {
-                                                if (activeTool === 'erase') {
-                                                    setCompletedEraseSelection(c);
-                                                } else {
-                                                    setCompletedCrop(c);
-                                                }
-                                            }}
-                                            aspect={activeTool === 'erase' ? undefined : cropAspect}
-                                            className="max-w-full max-h-full"
-                                        >
-                                            <img
-                                                ref={imageRef}
-                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
-                                                alt="Editable image"
-                                                className="max-w-full max-h-full object-contain"
-                                                onLoad={onImageLoad}
-                                                crossOrigin="anonymous"
-                                            />
-                                        </ReactCrop>
-                                    ) : (
-                                        <div className="relative">
-                                            <img
-                                                ref={imageRef}
-                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
-                                                alt="Editable image"
-                                                className="max-w-full max-h-full object-contain"
-                                                onClick={handleImageClick}
-                                                style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
-                                                crossOrigin="anonymous"
-                                            />
-                                             {hotspot && activeTool === 'retouch' && (
-                                                <div
-                                                    className="absolute border-2 border-dashed border-amber-400 bg-amber-400/20 rounded-full pointer-events-none animate-pulse"
-                                                    style={{
-                                                        left: `calc(${(hotspot.x / (imageRef.current?.naturalWidth || 1)) * 100}% - ${hotspotRadius}px)`,
-                                                        top: `calc(${(hotspot.y / (imageRef.current?.naturalHeight || 1)) * 100}% - ${hotspotRadius}px)`,
-                                                        width: `${hotspotRadius * 2}px`,
-                                                        height: `${hotspotRadius * 2}px`,
-                                                    }}
+                                isComparing && originalImageUrl ? (
+                                    <ReactCompareSlider
+                                        className="max-w-full max-h-full"
+                                        itemOne={
+                                            <div style={compareWrapperStyle}>
+                                                <img src={originalImageUrl} alt="Original" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />
+                                            </div>
+                                        }
+                                        itemTwo={
+                                            <div style={compareWrapperStyle}>
+                                                <img src={currentImageUrl} alt="Current" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />
+                                            </div>
+                                        }
+                                    />
+                                ) : (
+                                    <div className="relative max-w-full max-h-full flex items-center justify-center">
+                                        {(activeTool === 'crop' || activeTool === 'social' || activeTool === 'erase') ? (
+                                            <ReactCrop
+                                                crop={activeTool === 'erase' ? eraseSelection : crop}
+                                                onChange={(_, percentCrop) => {
+                                                    if (activeTool === 'erase') {
+                                                        setEraseSelection(percentCrop);
+                                                    } else {
+                                                        setCrop(percentCrop);
+                                                    }
+                                                }}
+                                                onComplete={(c) => {
+                                                    if (activeTool === 'erase') {
+                                                        setCompletedEraseSelection(c);
+                                                    } else {
+                                                        setCompletedCrop(c);
+                                                    }
+                                                }}
+                                                aspect={activeTool === 'erase' ? undefined : cropAspect}
+                                                className="max-w-full max-h-full"
+                                            >
+                                                <img
+                                                    ref={imageRef}
+                                                    src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                    alt="Editable image"
+                                                    className="max-w-full max-h-full object-contain"
+                                                    onLoad={onImageLoad}
+                                                    crossOrigin="anonymous"
                                                 />
-                                            )}
-                                        </div>
-                                    )}
+                                            </ReactCrop>
+                                        ) : (
+                                            <div className="relative">
+                                                <img
+                                                    ref={imageRef}
+                                                    src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                    alt="Editable image"
+                                                    className="max-w-full max-h-full object-contain"
+                                                    onClick={handleImageClick}
+                                                    style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
+                                                    crossOrigin="anonymous"
+                                                />
+                                                 {hotspot && activeTool === 'retouch' && (
+                                                    <div
+                                                        className="absolute border-2 border-dashed border-amber-400 bg-amber-400/20 rounded-full pointer-events-none animate-pulse"
+                                                        style={{
+                                                            left: `calc(${(hotspot.x / (imageRef.current?.naturalWidth || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                            top: `calc(${(hotspot.y / (imageRef.current?.naturalHeight || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                            width: `${hotspotRadius * 2}px`,
+                                                            height: `${hotspotRadius * 2}px`,
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
 
-                                    {activeTool === 'social' && socialText && (
-                                        <div 
-                                            ref={textOverlayRef}
-                                            onMouseDown={handleTextMouseDown}
-                                            className="absolute p-2 rounded-lg font-bold cursor-move select-none text-center"
-                                            style={{
-                                                left: `${socialTextPosition.x}%`,
-                                                top: `${socialTextPosition.y}%`,
-                                                transform: 'translate(-50%, -50%)',
-                                                fontSize: `${socialFontSize}vw`,
-                                                fontFamily: socialFont,
-                                                color: socialColor,
-                                                textShadow: socialShadow,
-                                                width: '90%',
-                                            }}
-                                        >
-                                            {socialText}
-                                        </div>
-                                    )}
-                                </>
+                                        {activeTool === 'social' && socialText && (
+                                            <div 
+                                                ref={textOverlayRef}
+                                                onMouseDown={handleTextMouseDown}
+                                                className="absolute p-2 rounded-lg font-bold cursor-move select-none text-center"
+                                                style={{
+                                                    left: `${socialTextPosition.x}%`,
+                                                    top: `${socialTextPosition.y}%`,
+                                                    transform: 'translate(-50%, -50%)',
+                                                    fontSize: `${socialFontSize}vw`,
+                                                    fontFamily: socialFont,
+                                                    color: socialColor,
+                                                    textShadow: socialShadow,
+                                                    width: '90%',
+                                                }}
+                                            >
+                                                {socialText}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
                             )}
+                        </div>
+                    ) : (
+                        <div className={`text-center text-gray-400 flex flex-col items-center justify-center gap-6 p-8 rounded-2xl border-2 transition-all duration-300 ${isDraggingOver ? 'border-dashed border-amber-400' : 'border-transparent'}`}>
+                            <img src="https://storage.googleapis.com/gemini-nano-banana/monster-on-banana.png" alt="Nano Banana Monster Studio mascot" className="w-40 h-auto drop-shadow-lg" />
+                            <h2 className="text-3xl font-bold text-gray-200">AI Photo Editor</h2>
+                            <p>Drag & drop an image, or use the buttons below to start.</p>
+                            <div className="flex items-center gap-4 mt-4">
+                                <label htmlFor="placeholder-upload-single" className="cursor-pointer flex items-center justify-center gap-3 px-6 py-3 rounded-lg text-base transition-colors text-white bg-amber-600 hover:bg-amber-500 font-semibold active:scale-95">
+                                    <UploadIcon className="w-6 h-6"/> Upload Image
+                                </label>
+                                <input id="placeholder-upload-single" type="file" onChange={handleNewUpload} accept={SUPPORTED_MIME_TYPES.join(',')} className="hidden"/>
+
+                                <label htmlFor="placeholder-upload-batch" className="cursor-pointer flex items-center justify-center gap-3 px-6 py-3 rounded-lg text-base transition-colors text-gray-200 bg-white/10 hover:bg-white/20 font-semibold active:scale-95">
+                                    <StackIcon className="w-6 h-6"/> Upload Batch
+                                </label>
+                                <input id="placeholder-upload-batch" type="file" multiple onChange={(e) => handleBatchFileSelect(e.target.files)} accept={SUPPORTED_MIME_TYPES.join(',')} className="hidden"/>
+                            </div>
                         </div>
                     )}
                 </main>
@@ -1202,6 +1407,7 @@ const App: React.FC = () => {
                     {activeTool === 'erase' && <ErasePanel onApplyErase={handleApplyErase} isLoading={isLoading} isSelectionMade={!!(completedEraseSelection && completedEraseSelection.width > 0)} credits={credits}/>}
                     {activeTool === 'filter' && <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} credits={credits} />}
+                    {activeTool === 'colorize' && <ColorizePanel onApplyColorize={handleApplyColorize} onApplyRepair={handleApplyRepair} onApplyColorizeAndRepair={handleApplyColorizeAndRepair} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={handleSetAspect} isLoading={isLoading} isCropping={!!completedCrop?.width} />}
                     {activeTool === 'background' && <BackgroundPanel onGenerateTransparentBackground={handleGenerateTransparentBg} onApplyBackgroundColor={handleApplyBackgroundColor} onApplyBackgroundImage={handleApplyBackgroundImage} isLoading={isLoading} credits={credits} />}
                     {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={handleUpscaleImage} isLoading={isLoading} credits={credits}/>}
@@ -1231,6 +1437,11 @@ const App: React.FC = () => {
                 </aside>
             </div>
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
+            <VoiceControl
+                onCommand={handleVoiceCommand}
+                onStatusUpdate={setVoiceStatus}
+                disabled={isLoading}
+            />
         </div>
     );
 };

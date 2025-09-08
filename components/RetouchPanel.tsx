@@ -104,10 +104,10 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="flex flex-col gap-4">
         {/* Reference Image Uploader */}
         <div className="flex flex-col gap-2">
-            <label className="font-semibold text-gray-300">Reference Image</label>
+            <label className="font-semibold text-gray-300">Reference Image (Optional)</label>
             <div className="relative aspect-square w-full bg-black/20 rounded-lg border-2 border-dashed border-gray-600 flex items-center justify-center">
                 {referenceImageUrl ? (
                     <>
@@ -139,14 +139,14 @@ const RetouchPanel: React.FC<RetouchPanelProps> = ({
         
         {/* Text Prompt */}
         <div className="flex flex-col gap-2">
-            <label htmlFor="retouch-prompt" className="font-semibold text-gray-300">Text Prompt</label>
+            <label htmlFor="retouch-prompt" className="font-semibold text-gray-300">Text Prompt (Optional)</label>
             <textarea
               id="retouch-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="e.g., 'add sunglasses' or 'make the cat smaller'"
-              className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
-              rows={5}
+              className="bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none placeholder:text-gray-500"
+              rows={4}
               disabled={isLoading || isOutOfCredits}
             />
         </div>

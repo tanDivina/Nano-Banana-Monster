@@ -4,13 +4,15 @@
 */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { generateFilteredImage, generateAdjustedImage, generateProductScene } from '../services/geminiService';
+import { generateFilteredImage, generateAdjustedImage, generateProductScene, generateColorizedImage, generateRepairedImage, generateColorizedAndRepairedImage, generateTransparentBackground, generateUpscaledImage } from '../services/geminiService';
 import Header from './Header';
 import Spinner from './Spinner';
 import FilterPanel from './FilterPanel';
 import AdjustmentPanel from './AdjustmentPanel';
 import ProductStudioPanel from './ProductStudioPanel';
-import { PaletteIcon, SunIcon, StudioIcon, DownloadIcon, UndoIcon, RedoIcon } from './icons';
+import ColorizePanel from './ColorizePanel';
+import UpscalePanel from './UpscalePanel';
+import { PaletteIcon, SunIcon, StudioIcon, DownloadIcon, UndoIcon, RedoIcon, ColorizeIcon, UpscaleIcon, BackgroundIcon } from './icons';
 
 // Helper to convert data URL to File
 const dataURLtoFile = (dataurl: string, filename: string): File => {
@@ -59,8 +61,29 @@ const ImageThumbnail: React.FC<{ item: BatchImage, onDownload: () => void }> = (
     );
 };
 
+
+const BatchBackgroundPanel: React.FC<{ onRemoveBackground: () => void, isLoading: boolean, credits: number }> = ({ onRemoveBackground, isLoading, credits }) => {
+    const isOutOfCredits = credits <= 0;
+    return (
+        <div className="w-full bg-gray-800/50 border border-gray-700 rounded-lg p-6 flex flex-col items-center gap-4 animate-fade-in backdrop-blur-sm">
+            <h3 className="text-xl font-semibold text-gray-200">Remove Background</h3>
+            <p className="text-sm text-gray-400 text-center max-w-md">
+                Automatically remove the background from all pending images in the batch, leaving the main subject on a transparent background.
+            </p>
+            <button
+                onClick={onRemoveBackground}
+                disabled={isLoading || isOutOfCredits}
+                className="w-full max-w-xs mt-2 bg-gradient-to-br from-amber-600 to-amber-500 text-white font-bold py-4 px-6 rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base disabled:from-amber-800 disabled:to-amber-700 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none"
+                title={isOutOfCredits ? "You are out of credits." : "Remove background from batch"}
+            >
+                {isLoading ? 'Processing...' : 'Remove Background from Batch'}
+            </button>
+        </div>
+    );
+};
+
 // Main Batch Editor Component
-type BatchTool = 'filter' | 'adjust' | 'studio';
+type BatchTool = 'filter' | 'adjust' | 'studio' | 'colorize' | 'upscale' | 'background';
 type BatchImageStatus = 'pending' | 'processing' | 'done' | 'error';
 
 interface BatchImage {
@@ -84,6 +107,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
     const [images, setImages] = useState<BatchImage[]>([]);
     const [activeTool, setActiveTool] = useState<BatchTool>('filter');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [activeRestoration, setActiveRestoration] = useState<string | null>(null);
 
     useEffect(() => {
         setImages(files.map((file, index) => ({
@@ -94,7 +118,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
         })));
     }, [files]);
 
-    const handleApply = async (prompt: string) => {
+    const handleApply = async (operation: string, prompt?: string) => {
         if (isProcessing) return;
 
         const pendingImages = images.filter(img => img.status === 'pending');
@@ -105,20 +129,36 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
         }
 
         setIsProcessing(true);
+        if (operation.startsWith('colorize') || operation === 'repair') {
+            setActiveRestoration(operation);
+        }
         onDeductCredits(pendingImages.length);
 
-        let serviceFunction: (file: File, prompt: string) => Promise<string>;
-        switch (activeTool) {
+        let serviceFunction: ((file: File, p: string) => Promise<string>) | ((file: File) => Promise<string>);
+
+        switch (operation) {
             case 'filter': serviceFunction = generateFilteredImage; break;
             case 'adjust': serviceFunction = generateAdjustedImage; break;
             case 'studio': serviceFunction = generateProductScene; break;
-            default: return;
+            case 'colorize': serviceFunction = generateColorizedImage; break;
+            case 'repair': serviceFunction = generateRepairedImage; break;
+            case 'colorize_repair': serviceFunction = generateColorizedAndRepairedImage; break;
+            case 'upscale': serviceFunction = generateUpscaledImage; break;
+            case 'background': serviceFunction = generateTransparentBackground; break;
+            default: 
+                setIsProcessing(false);
+                setActiveRestoration(null);
+                return;
         }
 
         for (const image of pendingImages) {
             setImages(prev => prev.map(img => img.id === image.id ? { ...img, status: 'processing' } : img));
             try {
-                const resultDataUrl = await serviceFunction(image.original, prompt);
+                const resultDataUrl = await (prompt 
+                    ? (serviceFunction as (file: File, p: string) => Promise<string>)(image.original, prompt) 
+                    : (serviceFunction as (file: File) => Promise<string>)(image.original)
+                );
+                
                 const newFile = dataURLtoFile(resultDataUrl, `processed_${image.original.name}`);
                 setImages(prev => prev.map(img => img.id === image.id ? { ...img, status: 'done', processed: newFile } : img));
             } catch (err) {
@@ -128,6 +168,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
         }
 
         setIsProcessing(false);
+        setActiveRestoration(null);
     };
     
     const downloadImage = (item: BatchImage) => {
@@ -159,18 +200,12 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
     const tools: { name: BatchTool; label: string; icon: React.FC<{className?: string}>; }[] = [
         { name: 'filter', label: 'Filter', icon: PaletteIcon },
         { name: 'adjust', label: 'Adjust', icon: SunIcon },
-        { name: 'studio', label: 'Studio', icon: StudioIcon },
+        { name: 'studio', label: 'Product Studio', icon: StudioIcon },
+        { name: 'colorize', label: 'Revive', icon: ColorizeIcon },
+        { name: 'upscale', label: 'Upscale', icon: UpscaleIcon },
+        { name: 'background', label: 'BG Remove', icon: BackgroundIcon },
     ];
     
-    const getButtonText = (baseText: string) => {
-        const pendingCount = images.filter(i => i.status === 'pending').length;
-        if (isProcessing) return `Processing... (${progress}/${images.length})`;
-        if (pendingCount > 0) return `${baseText} ${pendingCount} Images (${pendingCount} Credits)`;
-        return 'All Images Processed';
-    };
-
-    const isApplyDisabled = isProcessing || images.filter(i => i.status === 'pending').length === 0;
-
     return (
         <div className="w-full min-h-screen flex flex-col bg-gray-900 text-gray-100">
             <Header credits={credits} onRefillCredits={onRefillCredits} />
@@ -180,7 +215,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
                     <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-700">
                         <div>
                             <h2 className="text-2xl font-bold">Batch Editor</h2>
-                            <p className="text-gray-400">{images.length} images loaded. {successfulCount > 0 && `${successfulCount} processed.`}</p>
+                            <p className="text-gray-400">{images.length} images loaded. {isProcessing ? `Processing ${progress}/${images.length}...` : `${successfulCount} processed.`}</p>
                         </div>
                         <div className="flex items-center gap-2">
                              <button onClick={resetBatch} disabled={isProcessing} className="flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50">
@@ -213,7 +248,7 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
                                 key={tool.name}
                                 onClick={() => setActiveTool(tool.name)}
                                 disabled={isProcessing}
-                                className={`w-full flex flex-col items-center gap-2 text-center p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
+                                className={`w-full flex flex-col items-center justify-center gap-2 text-center p-3 rounded-lg text-base transition-colors disabled:opacity-50 ${
                                     activeTool === tool.name ? 'bg-amber-500/20 text-amber-300' : 'text-gray-300 hover:bg-white/10'
                                 }`}
                             >
@@ -223,9 +258,19 @@ const BatchEditor: React.FC<BatchEditorProps> = ({ files, onExit, credits, onRef
                         ))}
                     </div>
                     <div className="flex-grow">
-                        {activeTool === 'filter' && <FilterPanel onApplyFilter={handleApply} isLoading={isProcessing} credits={credits} />}
-                        {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApply} isLoading={isProcessing} credits={credits} />}
-                        {activeTool === 'studio' && <ProductStudioPanel onApplyScene={handleApply} isLoading={isProcessing} credits={credits} />}
+                        {activeTool === 'filter' && <FilterPanel onApplyFilter={(p) => handleApply('filter', p)} isLoading={isProcessing} credits={credits} isBatchMode />}
+                        {activeTool === 'adjust' && <AdjustmentPanel onApplyAdjustment={(p) => handleApply('adjust', p)} isLoading={isProcessing} credits={credits} isBatchMode />}
+                        {activeTool === 'studio' && <ProductStudioPanel onApplyScene={(p) => handleApply('studio', p)} isLoading={isProcessing} credits={credits} isBatchMode />}
+                        {activeTool === 'colorize' && <ColorizePanel 
+                            onApplyColorize={() => handleApply('colorize')}
+                            onApplyRepair={() => handleApply('repair')}
+                            onApplyColorizeAndRepair={() => handleApply('colorize_repair')}
+                            isLoading={isProcessing}
+                            credits={credits} 
+                            isBatchMode
+                        />}
+                        {activeTool === 'upscale' && <UpscalePanel onUpscaleImage={() => handleApply('upscale')} isLoading={isProcessing} credits={credits} isBatchMode />}
+                        {activeTool === 'background' && <BatchBackgroundPanel onRemoveBackground={() => handleApply('background')} isLoading={isProcessing} credits={credits} />}
                     </div>
                 </aside>
             </div>

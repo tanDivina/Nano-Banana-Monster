@@ -1,0 +1,16 @@
+{
+  "name": "nano-banana-functions",
+  "version": "1.0.0",
+  "description": "Secure proxy for ElevenLabs API",
+  "main": "index.js",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "form-data": "^4.0.0",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": "18"
+  }
+}

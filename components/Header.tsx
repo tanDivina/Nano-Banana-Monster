@@ -19,7 +19,7 @@ const Header: React.FC<HeaderProps> = ({ credits, onRefillCredits }) => {
       <div className="flex items-center gap-3">
           <RetouchIcon className="w-6 h-6 text-amber-400" />
           <h1 className="text-xl font-bold tracking-tight text-gray-100">
-            Nano Banana Monster
+            Nano Banana Monster Studio
           </h1>
       </div>
       <div className="flex items-center gap-4">

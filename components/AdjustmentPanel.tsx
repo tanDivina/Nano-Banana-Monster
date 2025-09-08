@@ -9,9 +9,10 @@ interface AdjustmentPanelProps {
   onApplyAdjustment: (prompt: string) => void;
   isLoading: boolean;
   credits: number;
+  isBatchMode?: boolean;
 }
 
-const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onApplyAdjustment, isLoading, credits }) => {
+const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onApplyAdjustment, isLoading, credits, isBatchMode }) => {
   const [selectedPresetPrompt, setSelectedPresetPrompt] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -63,8 +64,8 @@ const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onApplyAdjustment, is
         value={customPrompt}
         onChange={handleCustomChange}
         placeholder="Or describe an adjustment (e.g., 'change background to a forest')"
-        className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
-        rows={3}
+        className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none placeholder:text-gray-500"
+        rows={4}
         disabled={isLoading || isOutOfCredits}
       />
 
@@ -76,7 +77,7 @@ const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onApplyAdjustment, is
                 disabled={isLoading || !activePrompt.trim() || isOutOfCredits}
                 title={isOutOfCredits ? "You are out of credits." : "Apply this adjustment"}
             >
-                Apply Adjustment (1 Credit)
+                {isBatchMode ? 'Apply Adjustment to Batch' : 'Apply Adjustment (1 Credit)'}
             </button>
         </div>
       )}

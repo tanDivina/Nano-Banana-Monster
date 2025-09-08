@@ -9,9 +9,10 @@ interface FilterPanelProps {
   onApplyFilter: (prompt: string) => void;
   isLoading: boolean;
   credits: number;
+  isBatchMode?: boolean;
 }
 
-const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, credits }) => {
+const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, credits, isBatchMode }) => {
   const [selectedPresetPrompt, setSelectedPresetPrompt] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
@@ -67,8 +68,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, cre
         value={customPrompt}
         onChange={handleCustomChange}
         placeholder="Or describe a custom filter (e.g., '80s synthwave glow')"
-        className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
-        rows={3}
+        className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none placeholder:text-gray-500"
+        rows={4}
         disabled={isLoading || isOutOfCredits}
       />
       
@@ -80,7 +81,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading, cre
             disabled={isLoading || !activePrompt.trim() || isOutOfCredits}
             title={isOutOfCredits ? "You are out of credits." : "Apply this filter"}
           >
-            Apply Filter (1 Credit)
+            {isBatchMode ? 'Apply Filter to Batch' : 'Apply Filter (1 Credit)'}
           </button>
         </div>
       )}

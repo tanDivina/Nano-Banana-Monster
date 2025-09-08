@@ -50,8 +50,8 @@ const ErasePanel: React.FC<ErasePanelProps> = ({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder={placeholderText}
-            className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
-            rows={4}
+            className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none placeholder:text-gray-500"
+            rows={6}
             disabled={isLoading || isOutOfCredits}
           />
       </div>
