@@ -4,6 +4,7 @@
 */
 
 import React, { useState } from 'react';
+import { WandIcon } from './icons';
 
 interface SocialPanelProps {
   onApplySocialPost: () => void;
@@ -105,26 +106,33 @@ const SocialPanel: React.FC<SocialPanelProps> = ({
         </div>
       </div>
       
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2">
         <label htmlFor="social-text" className="text-sm font-medium text-gray-400">2. Add Text Overlay</label>
-        <input
-          id="social-text"
-          type="text"
-          value={socialText}
-          onChange={(e) => onSocialTextChange(e.target.value)}
-          placeholder="Enter a catchy title..."
-          className="bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
-          disabled={isLoading}
-        />
-        <button
-          onClick={onSuggestTitles}
-          disabled={isLoading || isSuggestingTitles || isOutOfCredits}
-          className="w-full flex items-center justify-center bg-white/10 text-gray-200 font-semibold py-2.5 px-3 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 text-sm"
-          title={isOutOfCredits ? "You are out of credits." : "Suggest titles with AI (1 Credit)"}
-        >
-          {isSuggestingTitles ? 'Generating...' : 'Suggest Titles with AI'}
-        </button>
+        <div className="relative">
+            <input
+              id="social-text"
+              type="text"
+              value={socialText}
+              onChange={(e) => onSocialTextChange(e.target.value)}
+              placeholder="Enter a catchy title..."
+              className="bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-3 focus:ring-2 focus:ring-amber-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base resize-none"
+              disabled={isLoading}
+            />
+            <button
+              onClick={onSuggestTitles}
+              disabled={isLoading || isSuggestingTitles || isOutOfCredits}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full text-gray-400 hover:text-amber-400 hover:bg-white/10 transition-colors disabled:opacity-50"
+              aria-label="Suggest titles with AI"
+              title={isOutOfCredits ? "You are out of credits." : "Suggest titles with AI (1 Credit)"}
+            >
+              <WandIcon className={`w-5 h-5 ${isSuggestingTitles ? 'animate-pulse' : ''}`} />
+            </button>
+        </div>
       </div>
+
+      {isSuggestingTitles && (
+        <div className="text-center text-sm text-gray-400 animate-fade-in">Generating suggestions...</div>
+      )}
 
       {titleSuggestions.length > 0 && (
           <div className="flex flex-col gap-2 pt-1 animate-fade-in">
