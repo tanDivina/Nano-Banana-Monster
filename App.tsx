@@ -7,7 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import { ReactCompareSlider } from 'react-compare-slider';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle, generateProductScene, generateColorizedImage, generateRepairedImage, generateColorizedAndRepairedImage, type ParsedCommand } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateTransparentBackground, generateUpscaledImage, generateSocialPostTitle, generateProductScene, generateColorizedImage, generateRepairedImage, generateColorizedAndRepairedImage } from './services/geminiService';
 import { saveSession, loadSession, clearSession } from './services/dbService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
@@ -24,7 +24,6 @@ import ProductStudioPanel from './components/ProductStudioPanel';
 import { UndoIcon, RedoIcon, RetouchIcon, EraseIcon, PaletteIcon, SunIcon, CropIcon, BackgroundIcon, UpscaleIcon, UploadIcon, EyeIcon, CompareIcon, HeartIcon, DownloadIcon, StudioIcon, ColorizeIcon, StackIcon } from './components/icons';
 import BatchEditor from './components/BatchEditor';
 import ColorizePanel from './components/ColorizePanel';
-import VoiceControl from './components/VoiceControl';
 import DynamicCursor from './components/DynamicCursor';
 
 // Helper to convert a data URL string to a File object
@@ -137,9 +136,6 @@ const App: React.FC = () => {
 
     // Download modal state
     const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
-
-    // Voice control state
-    const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
     
     const imageRef = useRef<HTMLImageElement>(null);
     const newUploadInputRef = useRef<HTMLInputElement>(null);
@@ -1094,63 +1090,6 @@ const App: React.FC = () => {
         };
     }, [handleMouseMove, handleMouseUp]);
 
-    const handleVoiceCommand = async (command: ParsedCommand) => {
-        if (!currentImage && !['undo', 'redo'].includes(command.tool)) {
-            setVoiceStatus("Please upload an image first.");
-            setTimeout(() => setVoiceStatus(null), 4000);
-            return;
-        }
-        
-        setVoiceStatus(`Executing: ${command.tool} - ${command.prompt || '...'}`);
-        
-        // De-activate current tool to avoid confusion
-        setActiveTool(null);
-    
-        switch (command.tool) {
-            case 'filter':
-                await handleApplyFilter(command.prompt);
-                break;
-            case 'adjust':
-                await handleApplyAdjustment(command.prompt);
-                break;
-            case 'retouch':
-                await handleApplyRetouch(command.prompt);
-                break;
-            case 'erase':
-                await handleApplyErase(command.prompt);
-                break;
-            case 'studio':
-                await handleApplyProductScene(command.prompt);
-                break;
-            case 'upscale':
-                await handleUpscaleImage();
-                break;
-            case 'background':
-                await handleGenerateTransparentBg();
-                break;
-            case 'colorize':
-                if (command.prompt === 'repair') await handleApplyRepair();
-                else if (command.prompt === 'both') await handleApplyColorizeAndRepair();
-                else await handleApplyColorize();
-                break;
-            case 'undo':
-                handleUndo();
-                break;
-            case 'redo':
-                handleRedo();
-                break;
-            case 'download':
-                setIsDownloadModalOpen(true);
-                break;
-            case 'unknown':
-            default:
-                setVoiceStatus(`Sorry, I didn't understand the command: "${command.prompt}"`);
-                break;
-        }
-        // Clear status after a bit
-        setTimeout(() => setVoiceStatus(null), 4000);
-    };
-
 
     if (isRestoring) {
         return <div className="w-full h-screen flex items-center justify-center"><Spinner/></div>
@@ -1270,12 +1209,6 @@ const App: React.FC = () => {
                         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-800/80 border border-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
                             <p>{error}</p>
                             <button onClick={() => setError(null)} className="absolute top-1 right-2 text-2xl leading-none">&times;</button>
-                        </div>
-                    )}
-                     {/* Voice Status Toast */}
-                     {voiceStatus && (
-                        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-gray-800/80 border border-gray-600 text-white px-6 py-3 rounded-lg shadow-lg z-30 max-w-md w-full text-center animate-fade-in backdrop-blur-sm">
-                            <p>{voiceStatus}</p>
                         </div>
                     )}
                     
@@ -1439,11 +1372,6 @@ const App: React.FC = () => {
                 </aside>
             </div>
             <DownloadModal isOpen={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} onDownload={handleDownload} imageSrc={currentImageUrl} />
-            <VoiceControl
-                onCommand={handleVoiceCommand}
-                onStatusUpdate={setVoiceStatus}
-                disabled={isLoading}
-            />
         </div>
     );
 };
