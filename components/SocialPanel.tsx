@@ -4,7 +4,6 @@
 */
 
 import React, { useState } from 'react';
-import { WandIcon } from './icons';
 
 interface SocialPanelProps {
   onApplySocialPost: () => void;
@@ -120,10 +119,9 @@ const SocialPanel: React.FC<SocialPanelProps> = ({
         <button
           onClick={onSuggestTitles}
           disabled={isLoading || isSuggestingTitles || isOutOfCredits}
-          className="w-full flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-3 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 text-sm"
+          className="w-full flex items-center justify-center bg-white/10 text-gray-200 font-semibold py-2.5 px-3 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 text-sm"
           title={isOutOfCredits ? "You are out of credits." : "Suggest titles with AI (1 Credit)"}
         >
-          <WandIcon className={`w-5 h-5 ${isSuggestingTitles ? 'animate-pulse' : ''}`} />
           {isSuggestingTitles ? 'Generating...' : 'Suggest Titles with AI'}
         </button>
       </div>

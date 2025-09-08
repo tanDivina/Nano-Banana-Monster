@@ -142,6 +142,16 @@ const App: React.FC = () => {
     const textOverlayRef = useRef<HTMLDivElement>(null);
     const dragStartRef = useRef<{ mouseX: number, mouseY: number, textX: number, textY: number } | null>(null);
     
+    // Style for comparison slider items to ensure consistent dimensions
+    const compareWrapperStyle: React.CSSProperties = {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+    };
+    
     const originalImage = history[0];
     const currentImage = history[historyIndex];
 
@@ -1144,7 +1154,15 @@ const App: React.FC = () => {
                             <button onMouseDown={() => setShowOriginal(true)} onMouseUp={() => setShowOriginal(false)} onMouseLeave={() => setShowOriginal(false)} disabled={historyIndex <= 0} className="flex-1 flex items-center justify-center gap-2 bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" title="Hold to see original">
                                 <EyeIcon className="w-5 h-5"/> Original
                             </button>
-                            <button onClick={handleCompareToggle} disabled={historyIndex <= 0 || isLoading} className={`relative flex items-center justify-center gap-2 w-14 h-full bg-white/10 text-gray-200 font-semibold py-2.5 px-4 rounded-md transition-all hover:bg-white/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${isComparing ? 'text-amber-400' : ''}`}>
+                            <button 
+                                onClick={handleCompareToggle} 
+                                disabled={historyIndex <= 0 || isLoading} 
+                                className={`relative flex items-center justify-center w-14 h-full font-semibold p-2.5 rounded-md transition-all duration-300 ease-in-out active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                                    isComparing 
+                                    ? 'bg-gradient-to-br from-amber-600 to-amber-500 text-white shadow-md shadow-amber-500/20' 
+                                    : 'bg-white/10 text-gray-200 hover:bg-white/20'
+                                }`}
+                            >
                                 <CompareIcon className="w-6 h-6"/>
                             </button>
                         </div>
@@ -1194,87 +1212,97 @@ const App: React.FC = () => {
                             )}
 
                             {!isLoading && (
-                                <>
-                                    {isComparing && originalImageUrl ? (
-                                        <ReactCompareSlider
-                                            className="max-w-full max-h-full"
-                                            itemOne={<img src={originalImageUrl} alt="Original" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
-                                            itemTwo={<img src={currentImageUrl} alt="Current" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />}
-                                        />
-                                    ) : (activeTool === 'crop' || activeTool === 'social' || activeTool === 'erase') ? (
-                                        <ReactCrop
-                                            crop={activeTool === 'erase' ? eraseSelection : crop}
-                                            onChange={(_, percentCrop) => {
-                                                if (activeTool === 'erase') {
-                                                    setEraseSelection(percentCrop);
-                                                } else {
-                                                    setCrop(percentCrop);
-                                                }
-                                            }}
-                                            onComplete={(c) => {
-                                                if (activeTool === 'erase') {
-                                                    setCompletedEraseSelection(c);
-                                                } else {
-                                                    setCompletedCrop(c);
-                                                }
-                                            }}
-                                            aspect={activeTool === 'erase' ? undefined : cropAspect}
-                                            className="max-w-full max-h-full"
-                                        >
-                                            <img
-                                                ref={imageRef}
-                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
-                                                alt="Editable image"
-                                                className="max-w-full max-h-full object-contain"
-                                                onLoad={onImageLoad}
-                                                crossOrigin="anonymous"
-                                            />
-                                        </ReactCrop>
-                                    ) : (
-                                        <div className="relative">
-                                            <img
-                                                ref={imageRef}
-                                                src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
-                                                alt="Editable image"
-                                                className="max-w-full max-h-full object-contain"
-                                                onClick={handleImageClick}
-                                                style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
-                                                crossOrigin="anonymous"
-                                            />
-                                             {hotspot && activeTool === 'retouch' && (
-                                                <div
-                                                    className="absolute border-2 border-dashed border-amber-400 bg-amber-400/20 rounded-full pointer-events-none animate-pulse"
-                                                    style={{
-                                                        left: `calc(${(hotspot.x / (imageRef.current?.naturalWidth || 1)) * 100}% - ${hotspotRadius}px)`,
-                                                        top: `calc(${(hotspot.y / (imageRef.current?.naturalHeight || 1)) * 100}% - ${hotspotRadius}px)`,
-                                                        width: `${hotspotRadius * 2}px`,
-                                                        height: `${hotspotRadius * 2}px`,
-                                                    }}
+                                isComparing && originalImageUrl ? (
+                                    <ReactCompareSlider
+                                        className="max-w-full max-h-full"
+                                        itemOne={
+                                            <div style={compareWrapperStyle}>
+                                                <img src={originalImageUrl} alt="Original" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />
+                                            </div>
+                                        }
+                                        itemTwo={
+                                            <div style={compareWrapperStyle}>
+                                                <img src={currentImageUrl} alt="Current" className="max-w-full max-h-full object-contain" crossOrigin="anonymous" />
+                                            </div>
+                                        }
+                                    />
+                                ) : (
+                                    <div className="relative max-w-full max-h-full flex items-center justify-center">
+                                        {(activeTool === 'crop' || activeTool === 'social' || activeTool === 'erase') ? (
+                                            <ReactCrop
+                                                crop={activeTool === 'erase' ? eraseSelection : crop}
+                                                onChange={(_, percentCrop) => {
+                                                    if (activeTool === 'erase') {
+                                                        setEraseSelection(percentCrop);
+                                                    } else {
+                                                        setCrop(percentCrop);
+                                                    }
+                                                }}
+                                                onComplete={(c) => {
+                                                    if (activeTool === 'erase') {
+                                                        setCompletedEraseSelection(c);
+                                                    } else {
+                                                        setCompletedCrop(c);
+                                                    }
+                                                }}
+                                                aspect={activeTool === 'erase' ? undefined : cropAspect}
+                                                className="max-w-full max-h-full"
+                                            >
+                                                <img
+                                                    ref={imageRef}
+                                                    src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                    alt="Editable image"
+                                                    className="max-w-full max-h-full object-contain"
+                                                    onLoad={onImageLoad}
+                                                    crossOrigin="anonymous"
                                                 />
-                                            )}
-                                        </div>
-                                    )}
+                                            </ReactCrop>
+                                        ) : (
+                                            <div className="relative">
+                                                <img
+                                                    ref={imageRef}
+                                                    src={showOriginal && originalImageUrl ? originalImageUrl : currentImageUrl}
+                                                    alt="Editable image"
+                                                    className="max-w-full max-h-full object-contain"
+                                                    onClick={handleImageClick}
+                                                    style={{ cursor: activeTool === 'retouch' ? 'crosshair' : 'default' }}
+                                                    crossOrigin="anonymous"
+                                                />
+                                                 {hotspot && activeTool === 'retouch' && (
+                                                    <div
+                                                        className="absolute border-2 border-dashed border-amber-400 bg-amber-400/20 rounded-full pointer-events-none animate-pulse"
+                                                        style={{
+                                                            left: `calc(${(hotspot.x / (imageRef.current?.naturalWidth || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                            top: `calc(${(hotspot.y / (imageRef.current?.naturalHeight || 1)) * 100}% - ${hotspotRadius}px)`,
+                                                            width: `${hotspotRadius * 2}px`,
+                                                            height: `${hotspotRadius * 2}px`,
+                                                        }}
+                                                    />
+                                                )}
+                                            </div>
+                                        )}
 
-                                    {activeTool === 'social' && socialText && (
-                                        <div 
-                                            ref={textOverlayRef}
-                                            onMouseDown={handleTextMouseDown}
-                                            className="absolute p-2 rounded-lg font-bold cursor-move select-none text-center"
-                                            style={{
-                                                left: `${socialTextPosition.x}%`,
-                                                top: `${socialTextPosition.y}%`,
-                                                transform: 'translate(-50%, -50%)',
-                                                fontSize: `${socialFontSize}vw`,
-                                                fontFamily: socialFont,
-                                                color: socialColor,
-                                                textShadow: socialShadow,
-                                                width: '90%',
-                                            }}
-                                        >
-                                            {socialText}
-                                        </div>
-                                    )}
-                                </>
+                                        {activeTool === 'social' && socialText && (
+                                            <div 
+                                                ref={textOverlayRef}
+                                                onMouseDown={handleTextMouseDown}
+                                                className="absolute p-2 rounded-lg font-bold cursor-move select-none text-center"
+                                                style={{
+                                                    left: `${socialTextPosition.x}%`,
+                                                    top: `${socialTextPosition.y}%`,
+                                                    transform: 'translate(-50%, -50%)',
+                                                    fontSize: `${socialFontSize}vw`,
+                                                    fontFamily: socialFont,
+                                                    color: socialColor,
+                                                    textShadow: socialShadow,
+                                                    width: '90%',
+                                                }}
+                                            >
+                                                {socialText}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
                             )}
                         </div>
                     ) : (
